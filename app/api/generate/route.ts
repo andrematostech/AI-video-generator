@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runVideoPipeline } from "@/lib/server/pipeline";
+import { randomUUID } from "node:crypto";
+import { buildProjectPaths } from "@/lib/server/filesystem";
+import { createVideoJob } from "@/lib/server/jobs";
+import { enqueueVideoJob } from "@/lib/server/queue";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,8 +18,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await runVideoPipeline(prompt);
-    return NextResponse.json(result);
+    const jobId = randomUUID();
+    const directories = buildProjectPaths(jobId);
+    const maxAttempts = 3;
+
+    const job = await createVideoJob({
+      id: jobId,
+      prompt,
+      assetsDirectory: directories.rootDirectory,
+      maxAttempts
+    });
+
+    await enqueueVideoJob({
+      jobId,
+      prompt,
+      attempt: 1,
+      maxAttempts,
+      enqueuedAt: new Date().toISOString()
+    });
+
+    return NextResponse.json(job, { status: 202 });
   } catch (error) {
     return NextResponse.json(
       {

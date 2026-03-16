@@ -6,6 +6,40 @@ export type VideoScene = {
   clipPath?: string;
 };
 
+export type GeneratedAsset = {
+  id: number;
+  assetType:
+    | "scene_clip"
+    | "narration_audio"
+    | "subtitle_file"
+    | "rendered_scene"
+    | "final_video";
+  jobId: string;
+  sceneIndex?: number;
+  filePath: string;
+  sourceUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PipelineStepLog = {
+  id: number;
+  jobId: string;
+  stepName:
+    | "script_generation"
+    | "scene_planning"
+    | "video_clip_generation"
+    | "narration_generation"
+    | "subtitle_generation"
+    | "ffmpeg_rendering";
+  status: "running" | "completed" | "failed";
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  errorMessage?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type SubtitleSegment = {
   startSeconds: number;
   endSeconds: number;
@@ -40,6 +74,8 @@ export type VideoJobResult = {
   id: string;
   prompt: string;
   status: VideoJobStatus;
+  attemptCount: number;
+  maxAttempts: number;
   createdAt: string;
   updatedAt: string;
   error?: string;
@@ -56,4 +92,6 @@ export type VideoJobResult = {
   subtitlePath?: string;
   outputVideoPath: string;
   assetsDirectory: string;
+  generatedAssets: GeneratedAsset[];
+  stepLogs: PipelineStepLog[];
 };

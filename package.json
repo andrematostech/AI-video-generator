@@ -7,22 +7,26 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx scripts/run-worker.ts"
   },
   "dependencies": {
     "next": "14.2.35",
     "openai": "^4.104.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "replicate": "^1.0.1"
+    "replicate": "^1.0.1",
+    "sql.js": "^1.13.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/sql.js": "^1.4.9",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
 }

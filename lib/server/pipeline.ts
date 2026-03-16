@@ -1,5 +1,4 @@
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import {
   ensureDirectories,
   buildProjectPaths,
@@ -18,19 +17,13 @@ import {
 import { generateNarrationAudio } from "@/lib/providers/openai-tts";
 import { transcribeNarration } from "@/lib/providers/openai-transcription";
 import { generateSceneClip } from "@/lib/providers/replicate";
+import { tracePipelineStep } from "@/lib/server/observability";
 import { buildSrt } from "@/lib/server/subtitles";
 import { GeneratedScript, VideoJobResult, VideoPlan, VideoScene } from "@/lib/types";
-import { createVideoJob, markVideoJobFailed, updateVideoJob } from "@/lib/server/jobs";
+import { recordGeneratedAsset, updateVideoJob } from "@/lib/server/jobs";
 
-export async function runVideoPipeline(prompt: string) {
-  const projectId = randomUUID();
-  const directories = buildProjectPaths(projectId);
-
-  await createVideoJob({
-    id: projectId,
-    prompt,
-    assetsDirectory: directories.rootDirectory
-  });
+export async function processVideoJob(jobId: string, prompt: string) {
+  const directories = buildProjectPaths(jobId);
 
   try {
     await ensureDirectories([
@@ -41,21 +34,88 @@ export async function runVideoPipeline(prompt: string) {
       directories.renderDirectory
     ]);
 
-    const generatedScript = await runScriptStep(projectId, prompt);
-    const plan = await runSceneStep(projectId, prompt, generatedScript);
-    await runClipStep(projectId, directories, plan.scenes);
-    const narrationAudioPath = await runNarrationStep(projectId, directories.audioDirectory, plan);
-    const subtitlePath = await runSubtitleStep(projectId, directories.subtitlesDirectory, plan, narrationAudioPath);
-    const outputVideoPath = await runRenderStep(
-      projectId,
-      directories,
-      plan.scenes,
-      narrationAudioPath,
-      subtitlePath
-    );
+    const generatedScript = await tracePipelineStep({
+      jobId,
+      stepName: "script_generation",
+      metadata: {
+        promptLength: prompt.length
+      },
+      run: () => runScriptStep(jobId, prompt),
+      onSuccessMetadata: (result) => ({
+        title: result.title,
+        targetDurationSeconds: result.targetDurationSeconds
+      })
+    });
+    const plan = await tracePipelineStep({
+      jobId,
+      stepName: "scene_planning",
+      metadata: {
+        targetDurationSeconds: generatedScript.targetDurationSeconds
+      },
+      run: () => runSceneStep(jobId, prompt, generatedScript),
+      onSuccessMetadata: (result) => ({
+        sceneCount: result.scenes.length,
+        totalPlannedDurationSeconds: result.scenes.reduce(
+          (sum, scene) => sum + scene.durationSeconds,
+          0
+        )
+      })
+    });
+    await tracePipelineStep({
+      jobId,
+      stepName: "video_clip_generation",
+      metadata: {
+        sceneCount: plan.scenes.length
+      },
+      run: () => runClipStep(jobId, directories, plan.scenes),
+      onSuccessMetadata: () => ({
+        generatedClipCount: plan.scenes.length
+      })
+    });
+    const narrationAudioPath = await tracePipelineStep({
+      jobId,
+      stepName: "narration_generation",
+      metadata: {
+        sceneCount: plan.scenes.length
+      },
+      run: () => runNarrationStep(jobId, directories.audioDirectory, plan),
+      onSuccessMetadata: (result) => ({
+        narrationAudioPath: result
+      })
+    });
+    const subtitlePath = await tracePipelineStep({
+      jobId,
+      stepName: "subtitle_generation",
+      metadata: {
+        narrationAudioPath
+      },
+      run: () => runSubtitleStep(jobId, directories.subtitlesDirectory, plan, narrationAudioPath),
+      onSuccessMetadata: (result) => ({
+        subtitlePath: result
+      })
+    });
+    const outputVideoPath = await tracePipelineStep({
+      jobId,
+      stepName: "ffmpeg_rendering",
+      metadata: {
+        sceneCount: plan.scenes.length,
+        subtitlePath
+      },
+      run: () =>
+        runRenderStep(
+          jobId,
+          directories,
+          plan.scenes,
+          narrationAudioPath,
+          subtitlePath
+        ),
+      onSuccessMetadata: (result) => ({
+        outputVideoPath: result
+      })
+    });
 
     const result: VideoJobResult = {
-      ...(await updateVideoJob(projectId, {
+      ...(await updateVideoJob(jobId, {
         status: "completed",
         title: plan.title,
         narrationAudioPath,
@@ -75,10 +135,6 @@ export async function runVideoPipeline(prompt: string) {
 
     return result;
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unexpected error during video generation.";
-
-    await markVideoJobFailed(projectId, message);
     throw error;
   }
 }
@@ -131,7 +187,7 @@ async function runClipStep(
   for (const [index, scene] of scenes.entries()) {
     const clipPath = path.join(directories.clipsDirectory, `scene-${scene.sceneIndex}.mp4`);
 
-    await generateSceneClip({
+    const clipResult = await generateSceneClip({
       prompt: scene.videoPrompt,
       durationSeconds: scene.durationSeconds,
       outputPath: clipPath,
@@ -139,6 +195,13 @@ async function runClipStep(
     });
 
     scene.clipPath = clipPath;
+    await recordGeneratedAsset({
+      jobId,
+      assetType: "scene_clip",
+      filePath: clipPath,
+      sceneIndex: scene.sceneIndex,
+      sourceUrl: clipResult.sourceUrl
+    });
 
     await updatePipelineProgress(jobId, {
       scenes,
@@ -215,6 +278,13 @@ async function runRenderStep(
     await renderSceneClip({
       clipPath,
       outputPath: renderedScenePath
+    });
+
+    await recordGeneratedAsset({
+      jobId,
+      assetType: "rendered_scene",
+      filePath: renderedScenePath,
+      sceneIndex: scene.sceneIndex
     });
 
     renderedScenePaths.push(renderedScenePath);

@@ -56,24 +56,41 @@ Copy `.env.example` to `.env.local` and fill in the values before running the ap
 
 ## Local Run Instructions
 
-1. Start the app with `npm run dev`.
-2. Open `http://localhost:3000`.
-3. Submit a prompt from the homepage.
-4. Wait for the job status page to update through the pipeline.
-5. Open the result page when the job is completed.
+1. Start the web app with `npm run dev`.
+2. Start the background worker in a second terminal with `npm run worker`.
+3. Open `http://localhost:3000`.
+4. Submit a prompt from the homepage.
+5. Wait for the job status page to update through the pipeline.
+6. Open the result page when the job is completed.
 
 ## Pipeline Explanation
 
 1. The homepage sends the user prompt to `POST /api/generate`.
-2. The server creates a local job record and sets its initial status.
-3. OpenAI generates the video title, narration script, and target duration.
-4. OpenAI converts the script into structured scenes.
-5. Replicate generates a clip for each scene and stores each clip locally.
-6. OpenAI TTS generates one narration audio file for the combined scene narration.
-7. OpenAI transcription converts the narration audio into timed subtitle segments.
-8. A local utility converts the subtitle segments into one `.srt` file.
-9. FFmpeg normalizes clips, concatenates them, attaches narration, burns subtitles, and writes the final MP4.
-10. The completed job exposes the final video through the result page and video API route.
+2. The API route creates a local job record and enqueues background work.
+3. The worker process claims queued jobs and runs the full generation pipeline asynchronously.
+4. OpenAI generates the video title, narration script, and target duration.
+5. OpenAI converts the script into structured scenes.
+6. Replicate generates a clip for each scene and stores each clip locally.
+7. OpenAI TTS generates one narration audio file for the combined scene narration.
+8. OpenAI transcription converts the narration audio into timed subtitle segments.
+9. A local utility converts the subtitle segments into one `.srt` file.
+10. FFmpeg normalizes clips, concatenates them, attaches narration, burns subtitles, and writes the final MP4.
+11. The completed job exposes the final video through the result page and video API route.
+
+## Observability
+
+The pipeline records step-level execution traces for:
+
+- script generation
+- scene planning
+- video clip generation
+- narration generation
+- subtitle generation
+- FFmpeg rendering
+
+These traces are stored in the local database and also appended to a per-job log file at:
+
+- `assets/<job-id>/logs/pipeline.log.jsonl`
 
 ## Future Improvements
 
