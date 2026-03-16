@@ -3,5 +3,6 @@ node_modules/
 assets
 .env
 .env.local
+.env.example
 *.log
 *.tsbuildinfo
