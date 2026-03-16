@@ -1,0 +1,126 @@
+import { spawn } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { getServerEnv } from "@/lib/config/env.server";
+
+const TARGET_WIDTH = 1280;
+const TARGET_HEIGHT = 720;
+const TARGET_FPS = 30;
+
+function runFfmpeg(args: string[]) {
+  const env = getServerEnv();
+
+  return new Promise<void>((resolve, reject) => {
+    const processHandle = spawn(env.FFMPEG_PATH, args, {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    let stderr = "";
+
+    processHandle.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    processHandle.on("error", reject);
+    processHandle.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`FFmpeg failed with code ${code}: ${stderr}`));
+    });
+  });
+}
+
+export async function renderSceneClip(options: {
+  clipPath: string;
+  outputPath: string;
+}) {
+  await runFfmpeg([
+    "-y",
+    "-i",
+    options.clipPath,
+    "-vf",
+    `scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:force_original_aspect_ratio=decrease,pad=${TARGET_WIDTH}:${TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${TARGET_FPS},format=yuv420p`,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "medium",
+    "-crf",
+    "23",
+    "-pix_fmt",
+    "yuv420p",
+    "-an",
+    options.outputPath
+  ]);
+}
+
+export async function concatenateScenes(scenePaths: string[], outputPath: string) {
+  const listFilePath = path.join(path.dirname(outputPath), "concat.txt");
+  const listContent = scenePaths
+    .map((scenePath) => `file '${scenePath.replace(/'/g, "'\\''")}'`)
+    .join("\n");
+
+  await writeFile(listFilePath, listContent, "utf8");
+
+  await runFfmpeg([
+    "-y",
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    listFilePath,
+    "-c",
+    "copy",
+    outputPath
+  ]);
+}
+
+export async function addNarrationTrack(options: {
+  videoPath: string;
+  narrationPath: string;
+  subtitlePath?: string;
+  outputPath: string;
+}) {
+  const subtitleFilterPath = options.subtitlePath
+    ? options.subtitlePath.replace(/\\/g, "/").replace(/:/g, "\\:")
+    : null;
+
+  await runFfmpeg([
+    "-y",
+    "-i",
+    options.videoPath,
+    "-i",
+    options.narrationPath,
+    "-map",
+    "0:v:0",
+    "-map",
+    "1:a:0",
+    ...(subtitleFilterPath
+      ? [
+          "-vf",
+          `subtitles='${subtitleFilterPath}':force_style='FontName=Arial,FontSize=18,PrimaryColour=&Hffffff&,OutlineColour=&H40000000&,BorderStyle=3,Outline=1,Shadow=0,Alignment=2,MarginV=24'`
+        ]
+      : []),
+    "-c:v",
+    subtitleFilterPath ? "libx264" : "copy",
+    ...(subtitleFilterPath
+      ? [
+          "-preset",
+          "medium",
+          "-crf",
+          "23",
+          "-pix_fmt",
+          "yuv420p"
+        ]
+      : []),
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-shortest",
+    options.outputPath
+  ]);
+}

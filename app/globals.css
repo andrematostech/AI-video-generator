@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-paper text-ink font-body min-h-screen;
+  background-image:
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(251, 191, 36, 0.14), transparent 22%),
+    linear-gradient(180deg, #fff7ed 0%, #f9fafb 38%, #ffffff 100%);
+}
+
+* {
+  box-sizing: border-box;
+}

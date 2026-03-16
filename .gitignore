@@ -1,0 +1,7 @@
+.next
+node_modules/
+assets
+.env
+.env.local
+*.log
+*.tsbuildinfo
