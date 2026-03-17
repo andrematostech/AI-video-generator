@@ -94,11 +94,14 @@ describe("runCleanupNow", () => {
 
       const staleDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
       await utimes(assetsDirectory, staleDate, staleDate);
-      await runDatabaseWrite((db) => {
-        db.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [
-          staleDate.toISOString(),
-          jobId
-        ]);
+      await runDatabaseWrite((store) => {
+        const job = store.jobs.find((entry) => entry.id === jobId);
+
+        if (!job) {
+          throw new Error(`Expected cleanup test job to exist: ${jobId}`);
+        }
+
+        job.updatedAt = staleDate.toISOString();
       });
 
       const result = await runCleanupNow();

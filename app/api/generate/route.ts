@@ -70,9 +70,17 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unexpected server error.";
+
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Unexpected server error."
+        error: message,
+        ...(process.env.NODE_ENV !== "production" && error instanceof Error
+          ? {
+              stack: error.stack
+            }
+          : {})
       },
       { status: 500 }
     );

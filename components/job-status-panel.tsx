@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { VideoJobResult, VideoScene } from "@/lib/types";
 
@@ -39,6 +40,54 @@ function formatDuration(durationMs?: number) {
   return `${(durationMs / 1000).toFixed(2)}s`;
 }
 
+function formatTimestamp(timestamp?: string) {
+  if (!timestamp) {
+    return "Not available";
+  }
+
+  return new Date(timestamp).toLocaleString();
+}
+
+function getStatusTone(status: VideoJobResult["status"]) {
+  switch (status) {
+    case "completed":
+      return "border-emerald-400/20 bg-emerald-500/10 text-emerald-100";
+    case "failed":
+      return "border-red-400/20 bg-red-500/10 text-red-100";
+    case "awaiting_scene_approval":
+      return "border-amber-400/20 bg-amber-500/10 text-amber-100";
+    case "queued":
+      return "border-blue-400/20 bg-blue-500/10 text-blue-100";
+    default:
+      return "border-white/10 bg-white/[0.06] text-stone-100";
+  }
+}
+
+function getStatusLabel(status: VideoJobResult["status"]) {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "generating_script":
+      return "Generating script";
+    case "generating_scenes":
+      return "Planning scenes";
+    case "awaiting_scene_approval":
+      return "Needs review";
+    case "generating_video_clips":
+      return "Generating clips";
+    case "generating_narration":
+      return "Generating narration";
+    case "generating_subtitles":
+      return "Generating subtitles";
+    case "rendering_video":
+      return "Rendering video";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+  }
+}
+
 function getStepState(job: VideoJobResult, stepStatuses: VideoJobResult["status"][]) {
   if (job.status === "completed") {
     return "complete";
@@ -52,14 +101,18 @@ function getStepState(job: VideoJobResult, stepStatuses: VideoJobResult["status"
 }
 
 export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
+  const router = useRouter();
   const [job, setJob] = useState(initialJob);
   const [pollError, setPollError] = useState<string | null>(null);
   const [editableScenes, setEditableScenes] = useState<VideoScene[]>(initialJob.scenes);
   const [isSavingScenes, setIsSavingScenes] = useState(false);
   const [sceneSaveError, setSceneSaveError] = useState<string | null>(null);
   const [isSceneDirty, setIsSceneDirty] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const isTerminal = job.status === "completed" || job.status === "failed";
+  const canCancel = job.status === "queued" || job.status === "awaiting_scene_approval";
+  const activeStepLog = [...job.stepLogs].reverse().find((log) => log.status === "running");
   const progressPercent = useMemo(() => getProgressPercent(job), [job]);
   const pipelineSteps = [
     {
@@ -204,15 +257,65 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
     }
   }
 
+  async function cancelJob() {
+    setPollError(null);
+    setIsCancelling(true);
+
+    try {
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "cancel"
+        })
+      });
+
+      const data = (await response.json()) as VideoJobResult | { error?: string };
+
+      if (!response.ok || !("id" in data)) {
+        throw new Error(("error" in data ? data.error : undefined) ?? "Failed to cancel job.");
+      }
+
+      setJob(data);
+    } catch (error) {
+      setPollError(error instanceof Error ? error.message : "Failed to cancel job.");
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 md:px-8 md:py-10">
       <div className="space-y-6">
         <section className="premium-shell overflow-hidden p-6 md:p-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_28%)]" />
           <div className="relative">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">
-              Job {job.id}
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">
+                Job {job.id}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/")}
+                  className="inline-flex rounded-[0.9rem] border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.08]"
+                >
+                  Back
+                </button>
+                {canCancel ? (
+                  <button
+                    type="button"
+                    onClick={cancelJob}
+                    disabled={isCancelling}
+                    className="inline-flex rounded-[0.9rem] border border-red-400/20 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isCancelling ? "Cancelling..." : "Cancel job"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
             <h1 className="mt-4 text-4xl leading-tight text-stone-50 md:text-5xl">
               {job.status === "completed"
                 ? "Video generation complete"
@@ -230,6 +333,29 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
               <span className="font-medium text-stone-100">{job.progress.currentStep}</span>
             </p>
 
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className={`rounded-[0.85rem] border px-4 py-3 ${getStatusTone(job.status)}`}>
+                <p className="text-[11px] uppercase tracking-[0.2em] opacity-70">Job state</p>
+                <p className="mt-2 text-sm font-semibold">{getStatusLabel(job.status)}</p>
+              </div>
+              <div className="rounded-[0.85rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-stone-100">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Attempt</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {job.attemptCount || 0} / {job.maxAttempts}
+                </p>
+              </div>
+              <div className="rounded-[0.85rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-stone-100">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Last updated</p>
+                <p className="mt-2 text-sm font-semibold">{formatTimestamp(job.updatedAt)}</p>
+              </div>
+              <div className="rounded-[0.85rem] border border-white/10 bg-white/[0.04] px-4 py-3 text-stone-100">
+                <p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Trace status</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {activeStepLog ? `Running ${activeStepLog.stepName.replaceAll("_", " ")}` : job.stepLogs.length > 0 ? `${job.stepLogs.length} events recorded` : "No step events yet"}
+                </p>
+              </div>
+            </div>
+
             <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
               <div>
                 <div className="grid gap-3 md:grid-cols-6">
@@ -239,7 +365,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                     return (
                       <div
                         key={step.label}
-                        className={`rounded-[1.4rem] border px-4 py-4 transition ${
+                        className={`rounded-[0.85rem] border px-4 py-4 transition ${
                           state === "current"
                             ? "border-[#f4d9b6]/40 bg-[#f4d9b6]/12 text-stone-50 shadow-glow"
                             : state === "complete"
@@ -255,9 +381,9 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                 </div>
 
                 <div className="mt-6">
-                  <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-2.5 overflow-hidden rounded-[0.7rem] bg-white/10">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#f4d9b6] via-[#dfbf94] to-[#8ca3ff] transition-all duration-500"
+                      className="h-full rounded-[0.7rem] bg-gradient-to-r from-[#f4d9b6] via-[#dfbf94] to-[#8ca3ff] transition-all duration-500"
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
@@ -282,14 +408,14 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                   <div className="mt-5 flex flex-wrap gap-3">
                     <Link
                       href={`/jobs/${job.id}/result`}
-                      className="inline-flex rounded-full bg-[#f4d9b6] px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-[#f8e4c9]"
+                      className="inline-flex rounded-[0.9rem] bg-[#f4d9b6] px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-[#f8e4c9]"
                     >
                       View final video
                     </Link>
                     <a
                       href={`/api/jobs/${job.id}/video`}
                       download
-                      className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.08]"
+                      className="inline-flex rounded-[0.9rem] border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.08]"
                     >
                       Download MP4
                     </a>
@@ -299,13 +425,13 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
             </div>
 
             {job.error ? (
-              <p className="mt-5 rounded-[1.4rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <p className="mt-5 rounded-[0.85rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                 {job.error}
               </p>
             ) : null}
 
             {pollError ? (
-              <p className="mt-3 rounded-[1.4rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              <p className="mt-3 rounded-[0.85rem] border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
                 {pollError}
               </p>
             ) : null}
@@ -332,7 +458,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                   type="button"
                   onClick={() => submitScenes("save")}
                   disabled={isSavingScenes}
-                  className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex rounded-[0.9rem] border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-stone-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSavingScenes ? "Saving..." : "Save changes"}
                 </button>
@@ -340,7 +466,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                   type="button"
                   onClick={() => submitScenes("confirm")}
                   disabled={isSavingScenes}
-                  className="inline-flex rounded-full bg-[#f4d9b6] px-4 py-2 text-sm font-semibold text-stone-950 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex rounded-[0.9rem] bg-[#f4d9b6] px-4 py-2 text-sm font-semibold text-stone-950 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSavingScenes ? "Submitting..." : "Confirm scenes and generate"}
                 </button>
@@ -348,7 +474,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
             </div>
 
             {sceneSaveError ? (
-              <p className="mt-4 rounded-[1.4rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <p className="mt-4 rounded-[0.85rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
                 {sceneSaveError}
               </p>
             ) : null}
@@ -357,7 +483,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
               {editableScenes.map((scene, index) => (
                 <article
                   key={`${scene.sceneIndex}-${index}`}
-                  className="rounded-[1.7rem] border border-white/10 bg-white/[0.04] p-5"
+                  className="rounded-[1rem] border border-white/10 bg-white/[0.04] p-5"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 className="text-xl text-stone-50">Scene {index + 1}</h3>
@@ -366,7 +492,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                         type="button"
                         onClick={() => moveScene(scene.sceneIndex, -1)}
                         disabled={index === 0 || isSavingScenes}
-                        className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-stone-100 disabled:opacity-50"
+                        className="rounded-[0.8rem] border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-stone-100 disabled:opacity-50"
                       >
                         Move up
                       </button>
@@ -374,7 +500,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                         type="button"
                         onClick={() => moveScene(scene.sceneIndex, 1)}
                         disabled={index === editableScenes.length - 1 || isSavingScenes}
-                        className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-stone-100 disabled:opacity-50"
+                        className="rounded-[0.8rem] border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold text-stone-100 disabled:opacity-50"
                       >
                         Move down
                       </button>
@@ -389,7 +515,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                         onChange={(event) =>
                           updateSceneValue(scene.sceneIndex, "narration", event.target.value)
                         }
-                        className="min-h-24 rounded-[1.25rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-stone-100 outline-none focus:border-[#e7b67a]/60 focus:ring-2 focus:ring-[#e7b67a]/20"
+                        className="min-h-24 rounded-[0.75rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-stone-100 outline-none focus:border-[#e7b67a]/60 focus:ring-2 focus:ring-[#e7b67a]/20"
                       />
                     </label>
                     <label className="grid gap-2 text-sm text-stone-300">
@@ -399,7 +525,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                         onChange={(event) =>
                           updateSceneValue(scene.sceneIndex, "videoPrompt", event.target.value)
                         }
-                        className="min-h-28 rounded-[1.25rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-stone-100 outline-none focus:border-[#e7b67a]/60 focus:ring-2 focus:ring-[#e7b67a]/20"
+                        className="min-h-28 rounded-[0.75rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-stone-100 outline-none focus:border-[#e7b67a]/60 focus:ring-2 focus:ring-[#e7b67a]/20"
                       />
                     </label>
                     <label className="grid max-w-40 gap-2 text-sm text-stone-300">
@@ -416,7 +542,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                             event.target.value
                           )
                         }
-                        className="rounded-[1.25rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-stone-100 outline-none focus:border-[#e7b67a]/60 focus:ring-2 focus:ring-[#e7b67a]/20"
+                        className="rounded-[0.75rem] border border-white/10 bg-white/[0.05] px-4 py-3 text-stone-100 outline-none focus:border-[#e7b67a]/60 focus:ring-2 focus:ring-[#e7b67a]/20"
                       />
                     </label>
                   </div>
@@ -433,7 +559,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
               >
                 <div className="flex items-center justify-between gap-4">
                   <h2 className="text-2xl text-stone-50">Scene {scene.sceneIndex}</h2>
-                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-stone-200">
+                  <span className="rounded-[0.8rem] border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-stone-200">
                     {scene.durationSeconds}s
                   </span>
                 </div>
@@ -451,49 +577,49 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
           <h2 className="text-2xl text-stone-50">Performance metrics</h2>
           {job.performanceMetrics ? (
             <div className="mt-4 grid gap-3 text-sm text-stone-300 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Script</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.scriptGenerationMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Scenes</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.scenePlanningMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Video clips</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.videoGenerationMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Narration</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.narrationGenerationMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Subtitles</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.subtitleGenerationMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Rendering</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.renderingMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Metadata</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.metadataGenerationMs)}
                 </p>
               </div>
-              <div className="rounded-[1.4rem] bg-white/[0.04] p-4">
+              <div className="rounded-[0.85rem] bg-white/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-500">Total</p>
                 <p className="mt-2 text-base font-semibold text-stone-50">
                   {formatDuration(job.performanceMetrics.totalPipelineMs)}
@@ -514,13 +640,13 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
               job.stepLogs.map((log) => (
                 <article
                   key={log.id}
-                  className="rounded-[1.4rem] border border-white/10 bg-white/[0.04] p-4"
+                  className="rounded-[0.85rem] border border-white/10 bg-white/[0.04] p-4"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-100">
                       {log.stepName}
                     </p>
-                    <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-stone-300">
+                    <span className="rounded-[0.8rem] border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-stone-300">
                       {log.status}
                     </span>
                   </div>
@@ -533,7 +659,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                     <p className="mt-2 text-sm text-red-300">{log.errorMessage}</p>
                   ) : null}
                   {log.metadata ? (
-                    <pre className="mt-3 overflow-x-auto rounded-[1rem] bg-black/30 p-3 text-xs text-stone-200">
+                    <pre className="mt-3 overflow-x-auto rounded-[0.6rem] bg-black/30 p-3 text-xs text-stone-200">
                       {JSON.stringify(log.metadata, null, 2)}
                     </pre>
                   ) : null}

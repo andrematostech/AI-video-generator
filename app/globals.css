@@ -9,11 +9,11 @@
 body {
   @apply min-h-screen font-body text-white antialiased;
   background-image:
-    radial-gradient(circle at 50% 18%, rgba(171, 129, 255, 0.24), transparent 16%),
-    radial-gradient(circle at 50% 42%, rgba(82, 131, 255, 0.16), transparent 20%),
+    radial-gradient(circle at 50% 10%, rgba(144, 116, 255, 0.34), transparent 18%),
+    radial-gradient(circle at 50% 22%, rgba(90, 136, 255, 0.22), transparent 24%),
     radial-gradient(circle at 18% 72%, rgba(255, 187, 120, 0.08), transparent 18%),
     radial-gradient(circle at 82% 24%, rgba(255, 255, 255, 0.06), transparent 12%),
-    linear-gradient(180deg, #07080d 0%, #0c0f18 46%, #080910 100%);
+    linear-gradient(180deg, #05070c 0%, #0a0d16 38%, #0b0f19 62%, #070910 100%);
   position: relative;
 }
 
@@ -29,6 +29,19 @@ body::before {
   background-position: 0 0, 12px 14px;
   opacity: 0.28;
   mix-blend-mode: screen;
+  z-index: 0;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(133, 111, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 50% 28%, rgba(88, 140, 255, 0.1), transparent 28%);
+  filter: blur(18px);
+  opacity: 0.95;
   z-index: 0;
 }
 
@@ -52,15 +65,59 @@ body::before {
 
 @layer components {
   .premium-shell {
-    @apply relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-soft backdrop-blur-xl;
+    @apply relative overflow-hidden rounded-[1.2rem] border border-white/10 bg-white/[0.04] shadow-soft backdrop-blur-xl;
   }
 
   .premium-panel {
-    @apply rounded-[1.75rem] border border-white/10 bg-white/[0.045] shadow-soft backdrop-blur-xl;
+    @apply rounded-[1.05rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.035))] shadow-soft backdrop-blur-xl;
   }
 
   .premium-pill {
-    @apply inline-flex items-center rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-xs font-medium tracking-[0.04em] text-stone-200;
+    @apply inline-flex items-center rounded-xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] px-4 py-3 text-xs font-medium tracking-[0.04em] text-stone-200;
+  }
+
+  .hero-glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.1), transparent 16%),
+      radial-gradient(circle at 50% 24%, rgba(124, 93, 255, 0.18), transparent 22%),
+      radial-gradient(circle at 50% 28%, rgba(75, 139, 255, 0.14), transparent 26%);
+    filter: blur(4px);
+  }
+
+  .surface-elevated {
+    @apply border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.035))] shadow-soft backdrop-blur-xl;
+  }
+
+  .interactive-card {
+    @apply transition duration-300 ease-out hover:-translate-y-1 hover:border-white/15 hover:shadow-[0_24px_80px_rgba(0,0,0,0.35)];
+  }
+
+  .hero-input {
+    @apply w-full border border-white/10 bg-white/[0.06] text-stone-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_0_0_rgba(0,0,0,0)] outline-none transition duration-200 placeholder:text-stone-500;
+  }
+
+  .hero-input:focus {
+    @apply border-white/15 bg-white/[0.075] ring-2 ring-[#7d8fff]/20;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 0 0 1px rgba(125, 143, 255, 0.12),
+      0 0 32px rgba(93, 124, 255, 0.22);
+  }
+
+  .hero-button {
+    @apply inline-flex items-center justify-center text-base font-semibold text-white transition duration-200;
+    background-image: linear-gradient(90deg, #5da3ff 0%, #7e87ff 44%, #cb7eff 100%);
+    box-shadow:
+      0 0 34px rgba(110, 121, 255, 0.32),
+      0 10px 30px rgba(70, 79, 166, 0.28);
+  }
+
+  .hero-button:hover {
+    transform: translateY(-1px) scale(1.015);
+    filter: brightness(1.06);
   }
 }
 

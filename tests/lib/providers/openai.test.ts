@@ -62,6 +62,38 @@ describe("OpenAI provider parsing", () => {
     expect(result).toHaveLength(4);
   });
 
+  it("normalizes scene indexes and numeric string durations", () => {
+    const result = parseScenePlan([
+      {
+        sceneIndex: "10",
+        narration: " Scene one narration ",
+        videoPrompt: " Prompt one ",
+        durationSeconds: "4"
+      },
+      {
+        sceneIndex: 7,
+        narration: "Scene two narration",
+        videoPrompt: "Prompt two",
+        durationSeconds: "5"
+      },
+      {
+        sceneIndex: 3,
+        narration: "Scene three narration",
+        videoPrompt: "Prompt three",
+        durationSeconds: 5
+      },
+      {
+        sceneIndex: 99,
+        narration: "Scene four narration",
+        videoPrompt: "Prompt four",
+        durationSeconds: "6"
+      }
+    ]);
+
+    expect(result.map((scene) => scene.sceneIndex)).toEqual([1, 2, 3, 4]);
+    expect(result.map((scene) => scene.durationSeconds)).toEqual([4, 5, 5, 6]);
+  });
+
   it("throws when the scene plan count is out of range", () => {
     expect(() =>
       parseScenePlan([

@@ -14,5 +14,4 @@ Test environment files are loaded in this order when present:
 
 - `.env.test.local`
 - `.env.test`
-- `.env.local`
 - `.env`

@@ -1,5 +1,6 @@
 import Replicate from "replicate";
 import { getServerEnv } from "@/lib/config/env.server";
+import { runWithTimeout } from "@/lib/providers/provider-timeout";
 import { downloadFile } from "@/lib/server/filesystem";
 
 type ReplicateModelIdentifier = `${string}/${string}` | `${string}/${string}:${string}`;
@@ -10,6 +11,8 @@ type GenerateClipParams = {
   outputPath: string;
   maxRetries?: number;
 };
+
+const REPLICATE_GENERATION_TIMEOUT_MS = 180_000;
 
 function getReplicateClient() {
   const env = getServerEnv();
@@ -36,15 +39,20 @@ function extractOutputUrl(output: unknown): string {
 
 async function requestSceneClipUrl(prompt: string, durationSeconds: number) {
   const env = getServerEnv();
-  const output = await getReplicateClient().run(
-    env.REPLICATE_MODEL as ReplicateModelIdentifier,
-    {
-      input: {
-        prompt,
-        duration: durationSeconds,
-        aspect_ratio: "16:9"
-      }
-    }
+  const output = await runWithTimeout(
+    "Replicate clip generation",
+    REPLICATE_GENERATION_TIMEOUT_MS,
+    () =>
+      getReplicateClient().run(
+        env.REPLICATE_MODEL as ReplicateModelIdentifier,
+        {
+          input: {
+            prompt,
+            duration: durationSeconds,
+            aspect_ratio: "16:9"
+          }
+        }
+      )
   );
 
   return extractOutputUrl(output);

@@ -56,7 +56,7 @@ export function VideoGeneratorForm() {
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             placeholder="Create a cinematic 30 second video about black holes and their mysteries..."
-            className="min-h-36 w-full rounded-[1.8rem] border border-white/10 bg-white/[0.04] px-7 py-6 text-lg leading-8 text-stone-100 outline-none transition duration-200 placeholder:text-stone-500 focus:border-[#8ab1ff]/45 focus:bg-white/[0.06] focus:ring-2 focus:ring-[#8ab1ff]/18"
+            className="hero-input min-h-28 rounded-[1.05rem] px-6 py-5 text-base leading-7"
             required
           />
         </div>
@@ -64,7 +64,7 @@ export function VideoGeneratorForm() {
           <button
             type="submit"
             disabled={isLoading || prompt.trim().length === 0}
-            className="inline-flex min-w-[18rem] items-center justify-center rounded-full bg-[linear-gradient(90deg,#5ba3ff_0%,#7f82ff_48%,#d179ff_100%)] px-8 py-3.5 text-base font-semibold text-white shadow-[0_0_28px_rgba(115,124,255,0.38)] transition duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300 disabled:shadow-none"
+            className="hero-button min-w-[15rem] rounded-[1rem] px-7 py-3.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none disabled:transform-none"
           >
             {isLoading ? "Generating video..." : "Generate video"}
           </button>
@@ -72,7 +72,7 @@ export function VideoGeneratorForm() {
       </form>
 
       {error ? (
-        <div className="mt-4 rounded-[1.25rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+        <div className="mt-4 rounded-[0.75rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {error}
         </div>
       ) : null}

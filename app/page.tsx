@@ -33,81 +33,85 @@ const previewCards = [
 
 export default function HomePage() {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-6 md:px-8 md:py-8">
-      <section className="premium-shell animate-fade-up px-5 py-6 md:px-8 md:py-8">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at top, rgba(255,255,255,0.1), transparent 20%), radial-gradient(circle at center, rgba(124,92,255,0.16), transparent 28%), linear-gradient(180deg, rgba(255,255,255,0.04), transparent 42%)"
-          }}
-        />
-        <div className="relative">
-          <div className="mx-auto flex max-w-4xl flex-col items-center py-12 text-center md:py-16">
-            <div className="text-5xl font-semibold tracking-[-0.04em] text-white md:text-6xl">
-              Lumo
-            </div>
-            <h1 className="mt-10 max-w-3xl text-4xl leading-[1.12] text-stone-50 md:text-6xl">
+    <main className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-6 md:px-8 md:py-8">
+      <div className="hero-glow" />
+
+      <header className="relative z-10 flex items-center justify-between">
+        <div className="text-[2rem] font-semibold tracking-[-0.05em] text-white md:text-[2.35rem]">
+          Lumo
+        </div>
+        <div className="hidden text-sm text-stone-500 md:block">Turn prompts into cinematic videos</div>
+      </header>
+
+      <section className="relative z-10 animate-fade-up pt-8 md:pt-12">
+        <div className="grid items-start gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-12">
+          <div className="max-w-xl pt-4">
+            <h1 className="max-w-2xl text-[2.65rem] font-medium leading-[1.02] tracking-[-0.055em] text-stone-50 md:text-[4.65rem] lg:text-[4.9rem]">
               Generate AI videos
               <br />
               from a single prompt
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-stone-400 md:text-lg">
+            <p className="mt-5 max-w-lg text-[1rem] leading-8 text-stone-400 md:text-[1.06rem]">
               Turn prompts into cinematic videos with AI-powered scenes,
               narration, and rendering.
             </p>
-            <div className="mt-10 w-full max-w-2xl">
+          </div>
+
+          <div className="flex flex-col items-center lg:items-stretch">
+            <div className="w-full max-w-xl self-center">
               <VideoGeneratorForm />
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto mt-5 grid w-full max-w-4xl gap-3 md:grid-cols-3">
-        {[
-          "Script + Scenes (OpenAI)",
-          "Video clips (Replicate)",
-          "Rendered with FFmpeg"
-        ].map((item, index) => (
-          <div
-            key={item}
-            className="premium-panel animate-fade-up px-4 py-3 text-sm text-stone-200"
-            style={{ animationDelay: `${index * 90}ms` }}
-          >
-            {item}
-          </div>
-        ))}
-      </section>
-
-      <section className="mx-auto mt-8 w-full max-w-5xl">
-        <div className="grid gap-4 md:grid-cols-2">
-          {previewCards.map((card) => (
-              <div
-                key={card.title}
-                className={`group relative aspect-[1.62] overflow-hidden rounded-[1.4rem] border border-white/10 bg-gradient-to-br ${card.tone} bg-dusk`}
-              >
+            <section className="mt-7 grid w-full gap-3 md:grid-cols-3">
+              {[
+                "Script + Scenes (OpenAI)",
+                "Video clips (Replicate)",
+                "Rendered with FFmpeg"
+              ].map((item, index) => (
                 <div
-                  className="absolute inset-0"
-                  style={{
-                    backgroundImage:
-                      "radial-gradient(circle at top, rgba(255,255,255,0.2), transparent 20%), linear-gradient(180deg, transparent, rgba(6,8,14,0.82))"
-                  }}
-                />
-                <div
-                  className="absolute inset-0 bg-cover bg-center opacity-80"
-                  style={{
-                    backgroundImage: card.background
-                  }}
-                />
-                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] via-transparent to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-5">
-                  <p className="text-xs uppercase tracking-[0.18em] text-stone-300">
-                    {card.label}
-                  </p>
-                  <h2 className="mt-2 text-2xl text-stone-50">{card.title}</h2>
+                  key={item}
+                  className="premium-panel interactive-card animate-fade-up px-4 py-3 text-sm text-stone-200"
+                  style={{ animationDelay: `${index * 90}ms` }}
+                >
+                  {item}
                 </div>
+              ))}
+            </section>
+
+            <section className="mt-8 w-full pb-10">
+              <div className="grid gap-4 md:grid-cols-2">
+                {previewCards.map((card) => (
+                  <div
+                    key={card.title}
+                    className={`group interactive-card relative aspect-[1.62] overflow-hidden rounded-[0.85rem] border border-white/10 bg-gradient-to-br ${card.tone} bg-dusk`}
+                  >
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        backgroundImage:
+                          "radial-gradient(circle at top, rgba(255,255,255,0.2), transparent 20%), linear-gradient(180deg, transparent, rgba(6,8,14,0.82))"
+                      }}
+                    />
+                    <div
+                      className="absolute inset-0 bg-cover bg-center opacity-80 transition duration-300 group-hover:scale-[1.02]"
+                      style={{
+                        backgroundImage: card.background
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.04] via-transparent to-transparent" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_24%)] opacity-70" />
+                    <div className="absolute bottom-0 left-0 right-0 p-5">
+                      <p className="text-xs uppercase tracking-[0.18em] text-stone-300">
+                        {card.label}
+                      </p>
+                      <h2 className="mt-2 text-2xl tracking-[-0.03em] text-stone-50">
+                        {card.title}
+                      </h2>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </section>
+          </div>
         </div>
       </section>
     </main>

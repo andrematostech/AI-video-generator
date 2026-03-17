@@ -18,8 +18,25 @@ const config: Config = {
         line: "rgba(255,255,255,0.1)"
       },
       fontFamily: {
-        display: ["Iowan Old Style", "Palatino Linotype", "Georgia", "serif"],
-        body: ["SF Pro Text", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"]
+        logo: ["Iowan Old Style", "Palatino Linotype", "Georgia", "serif"],
+        display: [
+          "SF Pro Display",
+          "Segoe UI Variable Display",
+          "Aptos Display",
+          "Inter",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif"
+        ],
+        body: [
+          "SF Pro Text",
+          "Segoe UI Variable Text",
+          "Aptos",
+          "Inter",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif"
+        ]
       },
       boxShadow: {
         soft: "0 30px 90px rgba(5, 8, 15, 0.28)",

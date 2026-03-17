@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readVideoJob, updateVideoJob } from "@/lib/server/jobs";
-import { enqueueVideoJob } from "@/lib/server/queue";
+import { enqueueVideoJob, removePendingVideoJobs } from "@/lib/server/queue";
 import { VideoScene } from "@/lib/types";
 
 type RouteContext = {
@@ -63,6 +63,35 @@ function normalizeScenes(input: unknown): VideoScene[] {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const job = await readVideoJob(context.params.jobId);
+    const body = (await request.json()) as {
+      action?: "save" | "confirm" | "cancel";
+      scenes?: unknown;
+    };
+
+    if (body.action === "cancel") {
+      if (job.status !== "queued" && job.status !== "awaiting_scene_approval") {
+        return NextResponse.json(
+          {
+            error: "This job can no longer be cancelled from the UI."
+          },
+          { status: 409 }
+        );
+      }
+
+      await removePendingVideoJobs(job.id);
+
+      const updatedJob = await updateVideoJob(job.id, {
+        status: "failed",
+        error: "Cancelled by user.",
+        progress: {
+          completedScenes: 0,
+          totalScenes: job.progress.totalScenes,
+          currentStep: "Cancelled by user"
+        }
+      });
+
+      return NextResponse.json(updatedJob);
+    }
 
     if (job.status !== "awaiting_scene_approval") {
       return NextResponse.json(
@@ -72,11 +101,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         { status: 409 }
       );
     }
-
-    const body = (await request.json()) as {
-      action?: "save" | "confirm";
-      scenes?: unknown;
-    };
 
     const scenes = normalizeScenes(body.scenes);
     const action = body.action ?? "save";

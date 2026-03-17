@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import OpenAI from "openai";
 import { getServerEnv } from "@/lib/config/env.server";
+import { runWithAbortTimeout } from "@/lib/providers/provider-timeout";
 import { SubtitleSegment } from "@/lib/types";
 
 type TranscriptionSegment = {
@@ -14,6 +15,7 @@ type VerboseTranscription = {
 };
 
 const TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
+const OPENAI_TRANSCRIPTION_TIMEOUT_MS = 60_000;
 
 function getOpenAiClient() {
   const env = getServerEnv();
@@ -24,12 +26,20 @@ function getOpenAiClient() {
 }
 
 export async function transcribeNarration(audioPath: string): Promise<SubtitleSegment[]> {
-  const transcript = (await getOpenAiClient().audio.transcriptions.create({
-    file: createReadStream(audioPath),
-    model: TRANSCRIPTION_MODEL,
-    response_format: "verbose_json",
-    timestamp_granularities: ["segment"]
-  })) as VerboseTranscription;
+  const transcript = (await runWithAbortTimeout(
+    "OpenAI transcription",
+    OPENAI_TRANSCRIPTION_TIMEOUT_MS,
+    (signal) =>
+      getOpenAiClient().audio.transcriptions.create(
+        {
+          file: createReadStream(audioPath),
+          model: TRANSCRIPTION_MODEL,
+          response_format: "verbose_json",
+          timestamp_granularities: ["segment"]
+        },
+        { signal }
+      )
+  )) as VerboseTranscription;
 
   if (!Array.isArray(transcript.segments) || transcript.segments.length === 0) {
     throw new Error("OpenAI transcription did not return subtitle segments.");

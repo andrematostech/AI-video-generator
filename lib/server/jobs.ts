@@ -60,6 +60,29 @@ function cloneScenes(jobId: string, scenes: VideoScene[]) {
   }));
 }
 
+function stripJobRelations(job: VideoJobResult) {
+  return {
+    id: job.id,
+    prompt: job.prompt,
+    status: job.status,
+    attemptCount: job.attemptCount,
+    maxAttempts: job.maxAttempts,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    error: job.error,
+    title: job.title,
+    script: job.script,
+    targetDurationSeconds: job.targetDurationSeconds,
+    progress: job.progress,
+    narrationAudioPath: job.narrationAudioPath,
+    subtitlePath: job.subtitlePath,
+    outputVideoPath: job.outputVideoPath,
+    assetsDirectory: job.assetsDirectory,
+    videoMetadata: job.videoMetadata,
+    performanceMetrics: job.performanceMetrics
+  };
+}
+
 async function readJobGraph(jobId: string) {
   const jobGraph = await runDatabaseRead((store) => {
     const job = store.jobs.find((entry) => entry.id === jobId);
@@ -112,6 +135,20 @@ export async function readVideoJob(jobId: string) {
   return readJobGraph(jobId);
 }
 
+export async function listQueuedVideoJobs() {
+  return runDatabaseRead((store) =>
+    store.jobs
+      .filter((job) => job.status === "queued")
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((job) => ({
+        id: job.id,
+        prompt: job.prompt,
+        attemptCount: job.attemptCount,
+        maxAttempts: job.maxAttempts
+      }))
+  );
+}
+
 export async function readVideoJobOutputPath(jobId: string) {
   const job = await readVideoJob(jobId);
 
@@ -133,15 +170,10 @@ export async function createVideoJob(params: {
 
   await runDatabaseWrite((store) => {
     store.jobs = store.jobs.filter((entry) => entry.id !== job.id);
-    store.jobs.push({
-      ...job,
-      generatedAssets: undefined as never,
-      stepLogs: undefined as never,
-      scenes: undefined as never
-    });
+    store.jobs.push(stripJobRelations(job));
   });
 
-  return readVideoJob(job.id);
+  return job;
 }
 
 export async function updateVideoJob(

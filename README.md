@@ -101,7 +101,7 @@ The generation flow is:
 
 2. Create your local environment file:
 
-   Copy `.env.example` to `.env.local`
+   Configure `.env`
 
 3. Fill in the required environment variables.
 

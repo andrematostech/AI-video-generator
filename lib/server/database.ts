@@ -92,7 +92,6 @@ const EMPTY_STORE: DatabaseStore = {
   }
 };
 
-let cachedStorePromise: Promise<DatabaseStore> | null = null;
 let writeChain = Promise.resolve();
 
 function getStoreFilePath() {
@@ -131,14 +130,6 @@ async function loadStore() {
   }
 }
 
-async function getStore() {
-  if (!cachedStorePromise) {
-    cachedStorePromise = loadStore();
-  }
-
-  return cachedStorePromise;
-}
-
 async function persistStore(store: DatabaseStore) {
   const filePath = getStoreFilePath();
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -149,10 +140,9 @@ export async function runDatabaseWrite<T>(
   callback: (store: DatabaseStore) => T | Promise<T>
 ) {
   const pendingResult = writeChain.then(async () => {
-    const currentStore = await getStore();
+    const currentStore = await loadStore();
     const mutableStore = await cloneStore(currentStore);
     const result = await callback(mutableStore);
-    cachedStorePromise = Promise.resolve(mutableStore);
     await persistStore(mutableStore);
     return result;
   });
@@ -168,12 +158,11 @@ export async function runDatabaseWrite<T>(
 export async function runDatabaseRead<T>(
   callback: (store: DatabaseStore) => T | Promise<T>
 ) {
-  const store = await getStore();
+  const store = await loadStore();
   const readonlyStore = await cloneStore(store);
   return callback(readonlyStore);
 }
 
 export async function resetDatabaseForTests() {
-  cachedStorePromise = null;
   writeChain = Promise.resolve();
 }

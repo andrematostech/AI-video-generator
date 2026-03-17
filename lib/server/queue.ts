@@ -16,6 +16,8 @@ type ClaimedQueueItem = {
   processingPath: string;
 };
 
+type QueueLocation = "pending" | "processing";
+
 function buildQueueDirectories() {
   const env = getServerEnv();
   const rootDirectory = path.join(env.ASSETS_DIR, ".queue");
@@ -54,6 +56,76 @@ export async function enqueueVideoJob(item: VideoQueueItem) {
   await writeFile(filePath, JSON.stringify(item, null, 2), "utf8");
 }
 
+async function readQueueItemsFromDirectory(
+  directoryPath: string,
+  location: QueueLocation
+) {
+  const entries = (await readdir(directoryPath))
+    .filter((entry) => entry.endsWith(".json"))
+    .sort();
+
+  const items: Array<{
+    item: VideoQueueItem;
+    filePath: string;
+    fileName: string;
+    location: QueueLocation;
+  }> = [];
+
+  for (const entry of entries) {
+    const filePath = path.join(directoryPath, entry);
+
+    try {
+      const rawItem = await readFile(filePath, "utf8");
+      items.push({
+        item: JSON.parse(rawItem) as VideoQueueItem,
+        filePath,
+        fileName: entry,
+        location
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return items;
+}
+
+export async function listQueueItems() {
+  const directories = await ensureQueueDirectories();
+  const [pendingItems, processingItems] = await Promise.all([
+    readQueueItemsFromDirectory(directories.pendingDirectory, "pending"),
+    readQueueItemsFromDirectory(directories.processingDirectory, "processing")
+  ]);
+
+  return [...pendingItems, ...processingItems];
+}
+
+export async function recoverProcessingQueueItems() {
+  const directories = await ensureQueueDirectories();
+  const processingItems = await readQueueItemsFromDirectory(
+    directories.processingDirectory,
+    "processing"
+  );
+
+  let recoveredCount = 0;
+
+  for (const processingItem of processingItems) {
+    const pendingPath = path.join(
+      directories.pendingDirectory,
+      processingItem.fileName
+    );
+
+    try {
+      await rename(processingItem.filePath, pendingPath);
+      recoveredCount += 1;
+    } catch {
+      await unlink(processingItem.filePath).catch(() => undefined);
+    }
+  }
+
+  return recoveredCount;
+}
+
 export async function claimNextVideoJob(): Promise<ClaimedQueueItem | null> {
   const directories = await ensureQueueDirectories();
   const entries = (await readdir(directories.pendingDirectory))
@@ -82,6 +154,18 @@ export async function claimNextVideoJob(): Promise<ClaimedQueueItem | null> {
 
 export async function completeClaimedVideoJob(processingPath: string) {
   await unlink(processingPath);
+}
+
+export async function removePendingVideoJobs(jobId: string) {
+  const directories = await ensureQueueDirectories();
+  const entries = (await readdir(directories.pendingDirectory))
+    .filter((entry) => entry.endsWith(".json") && entry.includes(`-${jobId}-attempt-`));
+
+  await Promise.all(
+    entries.map((entry) =>
+      unlink(path.join(directories.pendingDirectory, entry)).catch(() => undefined)
+    )
+  );
 }
 
 export async function retryClaimedVideoJob(

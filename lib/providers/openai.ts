@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { getServerEnv } from "@/lib/config/env.server";
+import { runWithAbortTimeout } from "@/lib/providers/provider-timeout";
 import {
   GeneratedScript,
   GeneratedVideoMetadata,
@@ -16,6 +17,8 @@ type VideoMetadataResponse = {
   shortDescription: unknown;
   tags: unknown;
 };
+
+const OPENAI_RESPONSE_TIMEOUT_MS = 60_000;
 
 function getOpenAiClient() {
   const env = getServerEnv();
@@ -88,35 +91,43 @@ export function parseGeneratedVideoMetadata(input: unknown): GeneratedVideoMetad
 
 export async function generateScript(prompt: string): Promise<GeneratedScript> {
   const env = getServerEnv();
-  const response = await getOpenAiClient().responses.create({
-    model: env.OPENAI_MODEL,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text:
-              "You create short AI video scripts. Return strict JSON with keys title, narrationScript, targetDurationSeconds. Keep it concise, cinematic, and suitable for a 15 to 30 second video."
+  const response = await runWithAbortTimeout(
+    "OpenAI script generation",
+    OPENAI_RESPONSE_TIMEOUT_MS,
+    (signal) =>
+      getOpenAiClient().responses.create(
+        {
+          model: env.OPENAI_MODEL,
+          input: [
+            {
+              role: "system",
+              content: [
+                {
+                  type: "input_text",
+                  text:
+                    "You create short AI video scripts. Return strict JSON with keys title, narrationScript, targetDurationSeconds. Keep it concise, cinematic, and suitable for a 15 to 30 second video."
+                }
+              ]
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: prompt
+                }
+              ]
+            }
+          ],
+          text: {
+            format: {
+              type: "json_object"
+            }
           }
-        ]
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: prompt
-          }
-        ]
-      }
-    ],
-    text: {
-      format: {
-        type: "json_object"
-      }
-    }
-  });
+        },
+        { signal }
+      )
+  );
 
   const rawJson = extractTextFromResponse(response);
   return parseGeneratedScript(JSON.parse(rawJson));
@@ -127,80 +138,88 @@ export async function generateVideoPlan(
   script: GeneratedScript
 ): Promise<VideoPlan> {
   const env = getServerEnv();
-  const response = await getOpenAiClient().responses.create({
-    model: env.OPENAI_MODEL,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text:
-              "You are planning scenes for a short AI-generated video. Return strict JSON with one key: scenes. scenes must contain between 4 and 6 items. Each scene must contain exactly sceneIndex, narration, videoPrompt, durationSeconds. Match the provided script and keep the total duration close to the provided target duration."
-          }
-        ]
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: JSON.stringify({
-              prompt,
-              title: script.title,
-              narrationScript: script.narrationScript,
-              targetDurationSeconds: script.targetDurationSeconds
-            })
-          }
-        ]
-      }
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "scene_plan",
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: ["scenes"],
-          properties: {
-            scenes: {
-              type: "array",
-              minItems: 4,
-              maxItems: 6,
-              items: {
+  const response = await runWithAbortTimeout(
+    "OpenAI scene planning",
+    OPENAI_RESPONSE_TIMEOUT_MS,
+    (signal) =>
+      getOpenAiClient().responses.create(
+        {
+          model: env.OPENAI_MODEL,
+          input: [
+            {
+              role: "system",
+              content: [
+                {
+                  type: "input_text",
+                  text:
+                    "You are planning scenes for a short AI-generated video. Return strict JSON with one key: scenes. scenes must contain between 4 and 6 items. Each scene must contain exactly sceneIndex, narration, videoPrompt, durationSeconds. Match the provided script and keep the total duration close to the provided target duration."
+                }
+              ]
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: JSON.stringify({
+                    prompt,
+                    title: script.title,
+                    narrationScript: script.narrationScript,
+                    targetDurationSeconds: script.targetDurationSeconds
+                  })
+                }
+              ]
+            }
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "scene_plan",
+              schema: {
                 type: "object",
                 additionalProperties: false,
-                required: [
-                  "sceneIndex",
-                  "narration",
-                  "videoPrompt",
-                  "durationSeconds"
-                ],
+                required: ["scenes"],
                 properties: {
-                  sceneIndex: {
-                    type: "integer",
-                    minimum: 1
-                  },
-                  narration: {
-                    type: "string"
-                  },
-                  videoPrompt: {
-                    type: "string"
-                  },
-                  durationSeconds: {
-                    type: "number",
-                    minimum: 1,
-                    maximum: 30
+                  scenes: {
+                    type: "array",
+                    minItems: 4,
+                    maxItems: 6,
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      required: [
+                        "sceneIndex",
+                        "narration",
+                        "videoPrompt",
+                        "durationSeconds"
+                      ],
+                      properties: {
+                        sceneIndex: {
+                          type: "integer",
+                          minimum: 1
+                        },
+                        narration: {
+                          type: "string"
+                        },
+                        videoPrompt: {
+                          type: "string"
+                        },
+                        durationSeconds: {
+                          type: "number",
+                          minimum: 1,
+                          maximum: 30
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
           }
-        }
-      }
-    }
-  });
+        },
+        { signal }
+      )
+  );
 
   const rawJson = extractTextFromResponse(response);
   const parsed = JSON.parse(rawJson) as ScenePlanResponse;
@@ -220,69 +239,77 @@ export async function generateVideoMetadata(params: {
   scenes: VideoScene[];
 }): Promise<GeneratedVideoMetadata> {
   const env = getServerEnv();
-  const response = await getOpenAiClient().responses.create({
-    model: env.OPENAI_MODEL,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text:
-              "You create publish-ready metadata for short AI videos. Return strict JSON with title, shortDescription, and tags. Keep the title concise, write a one or two sentence description, and produce 3 to 6 short lowercase tags."
-          }
-        ]
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: JSON.stringify({
-              prompt: params.prompt,
-              script: params.script,
-              scenes: params.scenes.map((scene) => ({
-                sceneIndex: scene.sceneIndex,
-                narration: scene.narration,
-                videoPrompt: scene.videoPrompt,
-                durationSeconds: scene.durationSeconds
-              }))
-            })
-          }
-        ]
-      }
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "video_metadata",
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: ["title", "shortDescription", "tags"],
-          properties: {
-            title: {
-              type: "string",
-              minLength: 1
+  const response = await runWithAbortTimeout(
+    "OpenAI metadata generation",
+    OPENAI_RESPONSE_TIMEOUT_MS,
+    (signal) =>
+      getOpenAiClient().responses.create(
+        {
+          model: env.OPENAI_MODEL,
+          input: [
+            {
+              role: "system",
+              content: [
+                {
+                  type: "input_text",
+                  text:
+                    "You create publish-ready metadata for short AI videos. Return strict JSON with title, shortDescription, and tags. Keep the title concise, write a one or two sentence description, and produce 3 to 6 short lowercase tags."
+                }
+              ]
             },
-            shortDescription: {
-              type: "string",
-              minLength: 1
-            },
-            tags: {
-              type: "array",
-              minItems: 3,
-              maxItems: 6,
-              items: {
-                type: "string",
-                minLength: 1
+            {
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: JSON.stringify({
+                    prompt: params.prompt,
+                    script: params.script,
+                    scenes: params.scenes.map((scene) => ({
+                      sceneIndex: scene.sceneIndex,
+                      narration: scene.narration,
+                      videoPrompt: scene.videoPrompt,
+                      durationSeconds: scene.durationSeconds
+                    }))
+                  })
+                }
+              ]
+            }
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "video_metadata",
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["title", "shortDescription", "tags"],
+                properties: {
+                  title: {
+                    type: "string",
+                    minLength: 1
+                  },
+                  shortDescription: {
+                    type: "string",
+                    minLength: 1
+                  },
+                  tags: {
+                    type: "array",
+                    minItems: 3,
+                    maxItems: 6,
+                    items: {
+                      type: "string",
+                      minLength: 1
+                    }
+                  }
+                }
               }
             }
           }
-        }
-      }
-    }
-  });
+        },
+        { signal }
+      )
+  );
 
   const rawJson = extractTextFromResponse(response);
   return parseGeneratedVideoMetadata(JSON.parse(rawJson));
@@ -294,41 +321,26 @@ export function parseScenePlan(input: unknown): VideoScene[] {
   }
 
   return input.map((scene, index) => {
-    if (!isVideoSceneShape(scene)) {
+    if (!scene || typeof scene !== "object") {
+      throw new Error(`OpenAI returned an invalid scene at index ${index}.`);
+    }
+
+    const candidate = scene as Record<string, unknown>;
+    const narration = String(candidate.narration ?? "").trim();
+    const videoPrompt = String(candidate.videoPrompt ?? "").trim();
+    const durationSeconds = Number(candidate.durationSeconds);
+
+    if (!narration || !videoPrompt || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
       throw new Error(`OpenAI returned an invalid scene at index ${index}.`);
     }
 
     return {
-      sceneIndex: scene.sceneIndex,
-      narration: scene.narration.trim(),
-      videoPrompt: scene.videoPrompt.trim(),
-      durationSeconds: scene.durationSeconds,
+      // Re-number scenes defensively so minor model formatting issues do not break the pipeline.
+      sceneIndex: index + 1,
+      narration,
+      videoPrompt,
+      durationSeconds,
       clipPath: undefined
     };
   });
-}
-
-function isVideoSceneShape(value: unknown): value is {
-  sceneIndex: number;
-  narration: string;
-  videoPrompt: string;
-  durationSeconds: number;
-} {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    typeof candidate.sceneIndex === "number" &&
-    Number.isInteger(candidate.sceneIndex) &&
-    candidate.sceneIndex > 0 &&
-    typeof candidate.narration === "string" &&
-    candidate.narration.trim().length > 0 &&
-    typeof candidate.videoPrompt === "string" &&
-    candidate.videoPrompt.trim().length > 0 &&
-    typeof candidate.durationSeconds === "number" &&
-    candidate.durationSeconds > 0
-  );
 }

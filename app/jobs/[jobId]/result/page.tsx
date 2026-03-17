@@ -31,7 +31,7 @@ export default async function JobResultPage({ params }: JobResultPageProps) {
               {metadata.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-stone-200"
+                  className="rounded-[0.8rem] border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-stone-200"
                 >
                   {tag}
                 </span>
@@ -52,7 +52,7 @@ export default async function JobResultPage({ params }: JobResultPageProps) {
 
         {job.status === "completed" && job.outputVideoPath ? (
           <>
-            <div className="mt-8 overflow-hidden rounded-[1.75rem] border border-white/10 bg-black/40 shadow-soft">
+            <div className="mt-8 overflow-hidden rounded-[1.05rem] border border-white/10 bg-black/40 shadow-soft">
               <video
                 controls
                 className="aspect-video w-full"
@@ -64,20 +64,20 @@ export default async function JobResultPage({ params }: JobResultPageProps) {
               <a
                 href={`/api/jobs/${job.id}/video`}
                 download
-                className="inline-flex rounded-full bg-[#f4d9b6] px-5 py-3 text-sm font-semibold text-stone-950 transition hover:bg-[#f8e4c9]"
+                className="inline-flex rounded-[0.95rem] bg-[#f4d9b6] px-5 py-3 text-sm font-semibold text-stone-950 transition hover:bg-[#f8e4c9]"
               >
                 Download MP4
               </a>
               <Link
                 href={`/jobs/${job.id}`}
-                className="inline-flex rounded-full border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.08]"
+                className="inline-flex rounded-[0.95rem] border border-white/10 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.08]"
               >
                 Back to job status
               </Link>
             </div>
           </>
         ) : (
-          <div className="mt-6 rounded-[1.5rem] border border-amber-400/20 bg-amber-500/10 p-5 text-sm text-amber-100">
+          <div className="mt-6 rounded-[0.9rem] border border-amber-400/20 bg-amber-500/10 p-5 text-sm text-amber-100">
             The final video is not ready yet. Check the job status page for progress updates.
           </div>
         )}

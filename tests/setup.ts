@@ -8,7 +8,6 @@ Object.assign(process.env, {
 for (const envFile of [
   ".env.test.local",
   ".env.test",
-  ".env.local",
   ".env"
 ]) {
   loadEnv({
