@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Video Generator MVP",
-  description: "Prompt-to-video MVP built with Next.js, OpenAI, Replicate, and FFmpeg."
+  title: "Lumo",
+  description: "Turn prompts into cinematic videos with Lumo."
 };
 
 export default function RootLayout({

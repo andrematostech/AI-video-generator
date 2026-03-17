@@ -1,162 +1,159 @@
 import path from "node:path";
-import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import initSqlJs, { Database, SqlJsStatic, SqlValue } from "sql.js";
 import { getServerEnv } from "@/lib/config/env.server";
+import { GeneratedAsset, PipelineStepLog, VideoJobResult, VideoJobStatus } from "@/lib/types";
 
-type DatabaseHandle = {
-  db: Database;
-  filePath: string;
+type StoredJob = {
+  id: string;
+  prompt: string;
+  status: VideoJobStatus;
+  attemptCount: number;
+  maxAttempts: number;
+  createdAt: string;
+  updatedAt: string;
+  error?: string;
+  title: string;
+  script: string;
+  targetDurationSeconds: number;
+  progress: VideoJobResult["progress"];
+  narrationAudioPath?: string;
+  subtitlePath?: string;
+  outputVideoPath: string;
+  assetsDirectory: string;
+  videoMetadata?: VideoJobResult["videoMetadata"];
+  performanceMetrics?: VideoJobResult["performanceMetrics"];
 };
 
-const SCHEMA_SQL = `
-  CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
-    prompt TEXT NOT NULL,
-    status TEXT NOT NULL,
-    attempt_count INTEGER NOT NULL,
-    max_attempts INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    error TEXT,
-    title TEXT NOT NULL,
-    script TEXT NOT NULL,
-    target_duration_seconds REAL NOT NULL,
-    current_step TEXT NOT NULL,
-    completed_scenes INTEGER NOT NULL,
-    total_scenes INTEGER NOT NULL,
-    narration_audio_path TEXT,
-    subtitle_path TEXT,
-    output_video_path TEXT NOT NULL,
-    assets_directory TEXT NOT NULL,
-    video_metadata_json TEXT,
-    performance_metrics_json TEXT
-  );
+type StoredScene = {
+  jobId: string;
+  sceneIndex: number;
+  narration: string;
+  videoPrompt: string;
+  durationSeconds: number;
+  clipPath?: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
-  CREATE TABLE IF NOT EXISTS scenes (
-    job_id TEXT NOT NULL,
-    scene_index INTEGER NOT NULL,
-    narration TEXT NOT NULL,
-    video_prompt TEXT NOT NULL,
-    duration_seconds REAL NOT NULL,
-    clip_path TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY (job_id, scene_index),
-    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-  );
+type StoredGeneratedAsset = {
+  id: number;
+  jobId: string;
+  sceneIndex?: number;
+  assetType: GeneratedAsset["assetType"];
+  filePath: string;
+  sourceUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
-  CREATE TABLE IF NOT EXISTS generated_assets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id TEXT NOT NULL,
-    scene_index INTEGER,
-    asset_type TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    source_url TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE(job_id, asset_type, scene_index, file_path),
-    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-  );
+type StoredPipelineStepLog = {
+  id: number;
+  jobId: string;
+  stepName: PipelineStepLog["stepName"];
+  status: PipelineStepLog["status"];
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  errorMessage?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
 
-  CREATE TABLE IF NOT EXISTS pipeline_step_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id TEXT NOT NULL,
-    step_name TEXT NOT NULL,
-    status TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    ended_at TEXT,
-    duration_ms INTEGER,
-    error_message TEXT,
-    metadata_json TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
-  );
+type StoredRateLimitEvent = {
+  id: number;
+  limiterKey: string;
+  createdAtMs: number;
+};
 
-  CREATE TABLE IF NOT EXISTS rate_limit_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    limiter_key TEXT NOT NULL,
-    created_at_ms INTEGER NOT NULL
-  );
-`;
+export type DatabaseStore = {
+  jobs: StoredJob[];
+  scenes: StoredScene[];
+  generatedAssets: StoredGeneratedAsset[];
+  pipelineStepLogs: StoredPipelineStepLog[];
+  rateLimitEvents: StoredRateLimitEvent[];
+  counters: {
+    generatedAssetId: number;
+    pipelineStepLogId: number;
+    rateLimitEventId: number;
+  };
+};
 
-let sqlJsPromise: Promise<SqlJsStatic> | null = null;
-let databaseHandlePromise: Promise<DatabaseHandle> | null = null;
+const EMPTY_STORE: DatabaseStore = {
+  jobs: [],
+  scenes: [],
+  generatedAssets: [],
+  pipelineStepLogs: [],
+  rateLimitEvents: [],
+  counters: {
+    generatedAssetId: 0,
+    pipelineStepLogId: 0,
+    rateLimitEventId: 0
+  }
+};
+
+let cachedStorePromise: Promise<DatabaseStore> | null = null;
 let writeChain = Promise.resolve();
 
-function ensureColumnExists(
-  db: Database,
-  tableName: string,
-  columnName: string,
-  columnDefinition: string
-) {
-  const rows = mapRows<{ name: string }>(db, `PRAGMA table_info(${tableName})`);
-  const hasColumn = rows.some((row) => row.name === columnName);
-
-  if (!hasColumn) {
-    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition}`);
-  }
-}
-
-function getDatabaseFilePath() {
+function getStoreFilePath() {
   const env = getServerEnv();
-  return path.join(env.ASSETS_DIR, ".data", "video-generator.sqlite");
+  return path.join(env.ASSETS_DIR, ".data", "video-generator-store.json");
 }
 
-function getSqlJs() {
-  if (!sqlJsPromise) {
-    sqlJsPromise = initSqlJs({
-      locateFile: (file: string) =>
-        path.join(process.cwd(), "node_modules", "sql.js", "dist", file)
-    });
-  }
-
-  return sqlJsPromise;
+async function cloneStore(store: DatabaseStore) {
+  return JSON.parse(JSON.stringify(store)) as DatabaseStore;
 }
 
-async function openDatabase() {
-  const SQL = await getSqlJs();
-  const filePath = getDatabaseFilePath();
+async function loadStore() {
+  const filePath = getStoreFilePath();
   await mkdir(path.dirname(filePath), { recursive: true });
 
-  const db = existsSync(filePath)
-    ? new SQL.Database(new Uint8Array(await readFile(filePath)))
-    : new SQL.Database();
+  try {
+    const raw = await readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw) as Partial<DatabaseStore>;
 
-  db.run(SCHEMA_SQL);
-  ensureColumnExists(db, "jobs", "video_metadata_json", "video_metadata_json TEXT");
-  ensureColumnExists(
-    db,
-    "jobs",
-    "performance_metrics_json",
-    "performance_metrics_json TEXT"
-  );
-
-  return {
-    db,
-    filePath
-  };
+    return {
+      ...EMPTY_STORE,
+      ...parsed,
+      jobs: parsed.jobs ?? [],
+      scenes: parsed.scenes ?? [],
+      generatedAssets: parsed.generatedAssets ?? [],
+      pipelineStepLogs: parsed.pipelineStepLogs ?? [],
+      rateLimitEvents: parsed.rateLimitEvents ?? [],
+      counters: {
+        ...EMPTY_STORE.counters,
+        ...(parsed.counters ?? {})
+      }
+    };
+  } catch {
+    await writeFile(filePath, JSON.stringify(EMPTY_STORE, null, 2), "utf8");
+    return cloneStore(EMPTY_STORE);
+  }
 }
 
-async function getDatabaseHandle() {
-  if (!databaseHandlePromise) {
-    databaseHandlePromise = openDatabase();
+async function getStore() {
+  if (!cachedStorePromise) {
+    cachedStorePromise = loadStore();
   }
 
-  return databaseHandlePromise;
+  return cachedStorePromise;
 }
 
-async function persistDatabase(handle: DatabaseHandle) {
-  const bytes = handle.db.export();
-  await writeFile(handle.filePath, Buffer.from(bytes));
+async function persistStore(store: DatabaseStore) {
+  const filePath = getStoreFilePath();
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify(store, null, 2), "utf8");
 }
 
-export async function runDatabaseWrite<T>(callback: (db: Database) => T | Promise<T>) {
+export async function runDatabaseWrite<T>(
+  callback: (store: DatabaseStore) => T | Promise<T>
+) {
   const pendingResult = writeChain.then(async () => {
-    const handle = await getDatabaseHandle();
-    const result = await callback(handle.db);
-    await persistDatabase(handle);
+    const currentStore = await getStore();
+    const mutableStore = await cloneStore(currentStore);
+    const result = await callback(mutableStore);
+    cachedStorePromise = Promise.resolve(mutableStore);
+    await persistStore(mutableStore);
     return result;
   });
 
@@ -168,34 +165,15 @@ export async function runDatabaseWrite<T>(callback: (db: Database) => T | Promis
   return pendingResult;
 }
 
-export async function runDatabaseRead<T>(callback: (db: Database) => T | Promise<T>) {
-  const handle = await getDatabaseHandle();
-  return callback(handle.db);
-}
-
-export function mapRows<T>(db: Database, sql: string, params: SqlValue[] = []) {
-  const statement = db.prepare(sql, params);
-  const rows: T[] = [];
-
-  while (statement.step()) {
-    rows.push(statement.getAsObject() as T);
-  }
-
-  statement.free();
-  return rows;
-}
-
-export function mapFirstRow<T>(db: Database, sql: string, params: SqlValue[] = []) {
-  const rows = mapRows<T>(db, sql, params);
-  return rows[0] ?? null;
+export async function runDatabaseRead<T>(
+  callback: (store: DatabaseStore) => T | Promise<T>
+) {
+  const store = await getStore();
+  const readonlyStore = await cloneStore(store);
+  return callback(readonlyStore);
 }
 
 export async function resetDatabaseForTests() {
-  if (databaseHandlePromise) {
-    const handle = await databaseHandlePromise;
-    handle.db.close();
-  }
-
-  databaseHandlePromise = null;
+  cachedStorePromise = null;
   writeChain = Promise.resolve();
 }

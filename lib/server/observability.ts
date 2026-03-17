@@ -1,36 +1,10 @@
 import path from "node:path";
 import { appendFile, mkdir } from "node:fs/promises";
 import { buildProjectPaths } from "@/lib/server/filesystem";
-import { mapRows, runDatabaseRead, runDatabaseWrite } from "@/lib/server/database";
+import { runDatabaseRead, runDatabaseWrite } from "@/lib/server/database";
 import { PipelineStepLog, VideoPerformanceMetrics } from "@/lib/types";
 
 type PipelineStepName = PipelineStepLog["stepName"];
-
-type StepLogRow = {
-  id: number;
-  job_id: string;
-  step_name: PipelineStepLog["stepName"];
-  status: PipelineStepLog["status"];
-  started_at: string;
-  ended_at: string | null;
-  duration_ms: number | null;
-  error_message: string | null;
-  metadata_json: string | null;
-};
-
-function mapStepLogRow(row: StepLogRow): PipelineStepLog {
-  return {
-    id: Number(row.id),
-    jobId: row.job_id,
-    stepName: row.step_name,
-    status: row.status,
-    startedAt: row.started_at,
-    endedAt: row.ended_at ?? undefined,
-    durationMs: row.duration_ms ?? undefined,
-    errorMessage: row.error_message ?? undefined,
-    metadata: row.metadata_json ? (JSON.parse(row.metadata_json) as Record<string, unknown>) : undefined
-  };
-}
 
 async function appendStepLogFile(jobId: string, payload: Record<string, unknown>) {
   const directories = buildProjectPaths(jobId);
@@ -47,38 +21,20 @@ export async function startPipelineStepLog(params: {
 }) {
   const now = new Date().toISOString();
 
-  const id = await runDatabaseWrite((db) => {
-    db.run(
-      `
-        INSERT INTO pipeline_step_logs (
-          job_id,
-          step_name,
-          status,
-          started_at,
-          ended_at,
-          duration_ms,
-          error_message,
-          metadata_json,
-          created_at,
-          updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        params.jobId,
-        params.stepName,
-        "running",
-        now,
-        null,
-        null,
-        null,
-        params.metadata ? JSON.stringify(params.metadata) : null,
-        now,
-        now
-      ]
-    );
+  const id = await runDatabaseWrite((store) => {
+    store.counters.pipelineStepLogId += 1;
+    store.pipelineStepLogs.push({
+      id: store.counters.pipelineStepLogId,
+      jobId: params.jobId,
+      stepName: params.stepName,
+      status: "running",
+      startedAt: now,
+      metadata: params.metadata,
+      createdAt: now,
+      updatedAt: now
+    });
 
-    const row = mapRows<{ id: number }>(db, "SELECT last_insert_rowid() AS id");
-    return Number(row[0]?.id ?? 0);
+    return store.counters.pipelineStepLogId;
   });
 
   await appendStepLogFile(params.jobId, {
@@ -104,27 +60,18 @@ export async function completePipelineStepLog(params: {
   const endedAt = new Date().toISOString();
   const durationMs = new Date(endedAt).getTime() - new Date(params.startedAt).getTime();
 
-  await runDatabaseWrite((db) => {
-    db.run(
-      `
-        UPDATE pipeline_step_logs
-        SET
-          status = ?,
-          ended_at = ?,
-          duration_ms = ?,
-          metadata_json = ?,
-          updated_at = ?
-        WHERE id = ?
-      `,
-      [
-        "completed",
-        endedAt,
-        durationMs,
-        params.metadata ? JSON.stringify(params.metadata) : null,
-        endedAt,
-        params.id
-      ]
-    );
+  await runDatabaseWrite((store) => {
+    const log = store.pipelineStepLogs.find((entry) => entry.id === params.id);
+
+    if (!log) {
+      throw new Error(`Pipeline step log not found: ${params.id}`);
+    }
+
+    log.status = "completed";
+    log.endedAt = endedAt;
+    log.durationMs = durationMs;
+    log.metadata = params.metadata;
+    log.updatedAt = endedAt;
   });
 
   await appendStepLogFile(params.jobId, {
@@ -148,29 +95,19 @@ export async function failPipelineStepLog(params: {
   const endedAt = new Date().toISOString();
   const durationMs = new Date(endedAt).getTime() - new Date(params.startedAt).getTime();
 
-  await runDatabaseWrite((db) => {
-    db.run(
-      `
-        UPDATE pipeline_step_logs
-        SET
-          status = ?,
-          ended_at = ?,
-          duration_ms = ?,
-          error_message = ?,
-          metadata_json = ?,
-          updated_at = ?
-        WHERE id = ?
-      `,
-      [
-        "failed",
-        endedAt,
-        durationMs,
-        params.errorMessage,
-        params.metadata ? JSON.stringify(params.metadata) : null,
-        endedAt,
-        params.id
-      ]
-    );
+  await runDatabaseWrite((store) => {
+    const log = store.pipelineStepLogs.find((entry) => entry.id === params.id);
+
+    if (!log) {
+      throw new Error(`Pipeline step log not found: ${params.id}`);
+    }
+
+    log.status = "failed";
+    log.endedAt = endedAt;
+    log.durationMs = durationMs;
+    log.errorMessage = params.errorMessage;
+    log.metadata = params.metadata;
+    log.updatedAt = endedAt;
   });
 
   await appendStepLogFile(params.jobId, {
@@ -185,20 +122,22 @@ export async function failPipelineStepLog(params: {
 }
 
 export async function readPipelineStepLogs(jobId: string) {
-  return runDatabaseRead((db) => {
-    const rows = mapRows<StepLogRow>(
-      db,
-      `
-        SELECT *
-        FROM pipeline_step_logs
-        WHERE job_id = ?
-        ORDER BY id ASC
-      `,
-      [jobId]
-    );
-
-    return rows.map(mapStepLogRow);
-  });
+  return runDatabaseRead((store) =>
+    store.pipelineStepLogs
+      .filter((log) => log.jobId === jobId)
+      .sort((a, b) => a.id - b.id)
+      .map((log) => ({
+        id: log.id,
+        jobId: log.jobId,
+        stepName: log.stepName,
+        status: log.status,
+        startedAt: log.startedAt,
+        endedAt: log.endedAt,
+        durationMs: log.durationMs,
+        errorMessage: log.errorMessage,
+        metadata: log.metadata
+      }))
+  );
 }
 
 function getStepDuration(

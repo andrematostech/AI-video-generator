@@ -48,35 +48,31 @@ export function VideoGeneratorForm() {
   }
 
   return (
-    <section className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-soft backdrop-blur">
-      <form className="space-y-5" onSubmit={handleSubmit}>
-        <div className="space-y-2">
-          <label
-            htmlFor="prompt"
-            className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500"
-          >
-            Video prompt
-          </label>
+    <section className="space-y-4">
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div className="space-y-3">
           <textarea
             id="prompt"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Example: Create a cinematic 20 second promo for a productivity app used by freelance designers."
-            className="min-h-40 w-full rounded-3xl border border-orange-100 bg-sand px-5 py-4 text-base text-slate-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
+            placeholder="Create a cinematic 30 second video about black holes and their mysteries..."
+            className="min-h-36 w-full rounded-[1.8rem] border border-white/10 bg-white/[0.04] px-7 py-6 text-lg leading-8 text-stone-100 outline-none transition duration-200 placeholder:text-stone-500 focus:border-[#8ab1ff]/45 focus:bg-white/[0.06] focus:ring-2 focus:ring-[#8ab1ff]/18"
             required
           />
         </div>
-        <button
-          type="submit"
-          disabled={isLoading || prompt.trim().length === 0}
-          className="inline-flex w-full items-center justify-center rounded-full bg-ink px-5 py-3 text-base font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {isLoading ? "Generating video..." : "Generate video"}
-        </button>
+        <div className="flex justify-center">
+          <button
+            type="submit"
+            disabled={isLoading || prompt.trim().length === 0}
+            className="inline-flex min-w-[18rem] items-center justify-center rounded-full bg-[linear-gradient(90deg,#5ba3ff_0%,#7f82ff_48%,#d179ff_100%)] px-8 py-3.5 text-base font-semibold text-white shadow-[0_0_28px_rgba(115,124,255,0.38)] transition duration-200 hover:brightness-110 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-300 disabled:shadow-none"
+          >
+            {isLoading ? "Generating video..." : "Generate video"}
+          </button>
+        </div>
       </form>
 
       {error ? (
-        <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mt-4 rounded-[1.25rem] border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {error}
         </div>
       ) : null}

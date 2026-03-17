@@ -3,17 +3,81 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
-  @apply bg-paper text-ink font-body min-h-screen;
+  @apply min-h-screen font-body text-white antialiased;
   background-image:
-    radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(251, 191, 36, 0.14), transparent 22%),
-    linear-gradient(180deg, #fff7ed 0%, #f9fafb 38%, #ffffff 100%);
+    radial-gradient(circle at 50% 18%, rgba(171, 129, 255, 0.24), transparent 16%),
+    radial-gradient(circle at 50% 42%, rgba(82, 131, 255, 0.16), transparent 20%),
+    radial-gradient(circle at 18% 72%, rgba(255, 187, 120, 0.08), transparent 18%),
+    radial-gradient(circle at 82% 24%, rgba(255, 255, 255, 0.06), transparent 12%),
+    linear-gradient(180deg, #07080d 0%, #0c0f18 46%, #080910 100%);
+  position: relative;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(255,255,255,0.18) 0.7px, transparent 0.7px),
+    radial-gradient(rgba(255,255,255,0.09) 0.6px, transparent 0.6px);
+  background-size: 26px 26px, 42px 42px;
+  background-position: 0 0, 12px 14px;
+  opacity: 0.28;
+  mix-blend-mode: screen;
+  z-index: 0;
 }
 
 * {
   box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(240, 211, 171, 0.28);
+  color: #fff9ef;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .premium-shell {
+    @apply relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.04] shadow-soft backdrop-blur-xl;
+  }
+
+  .premium-panel {
+    @apply rounded-[1.75rem] border border-white/10 bg-white/[0.045] shadow-soft backdrop-blur-xl;
+  }
+
+  .premium-pill {
+    @apply inline-flex items-center rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-xs font-medium tracking-[0.04em] text-stone-200;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer utilities {
+  .animate-fade-up {
+    animation: fade-up 700ms ease forwards;
+  }
 }

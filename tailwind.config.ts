@@ -8,17 +8,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#111827",
-        paper: "#f9fafb",
-        coral: "#f97316",
-        sand: "#fff7ed"
+        ink: "#09090b",
+        paper: "#f5f1e8",
+        coral: "#e7b67a",
+        sand: "#121214",
+        night: "#0f1115",
+        dusk: "#171a22",
+        mist: "#a7afc0",
+        line: "rgba(255,255,255,0.1)"
       },
       fontFamily: {
-        display: ["Georgia", "serif"],
-        body: ["ui-sans-serif", "system-ui", "sans-serif"]
+        display: ["Iowan Old Style", "Palatino Linotype", "Georgia", "serif"],
+        body: ["SF Pro Text", "Segoe UI", "Helvetica Neue", "Arial", "sans-serif"]
       },
       boxShadow: {
-        soft: "0 20px 60px rgba(17, 24, 39, 0.12)"
+        soft: "0 30px 90px rgba(5, 8, 15, 0.28)",
+        glow: "0 18px 50px rgba(231, 182, 122, 0.18)"
       }
     }
   },
