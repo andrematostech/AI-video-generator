@@ -2,7 +2,7 @@ import path from "node:path";
 import { appendFile, mkdir } from "node:fs/promises";
 import { buildProjectPaths } from "@/lib/server/filesystem";
 import { mapRows, runDatabaseRead, runDatabaseWrite } from "@/lib/server/database";
-import { PipelineStepLog } from "@/lib/types";
+import { PipelineStepLog, VideoPerformanceMetrics } from "@/lib/types";
 
 type PipelineStepName = PipelineStepLog["stepName"];
 
@@ -199,6 +199,39 @@ export async function readPipelineStepLogs(jobId: string) {
 
     return rows.map(mapStepLogRow);
   });
+}
+
+function getStepDuration(
+  stepLogs: PipelineStepLog[],
+  stepName: PipelineStepLog["stepName"]
+) {
+  return stepLogs.find((log) => log.stepName === stepName)?.durationMs;
+}
+
+export function buildPerformanceMetrics(
+  stepLogs: PipelineStepLog[]
+): VideoPerformanceMetrics {
+  const startedAtValues = stepLogs.map((log) => new Date(log.startedAt).getTime());
+  const endedAtValues = stepLogs
+    .filter((log) => log.endedAt)
+    .map((log) => new Date(log.endedAt as string).getTime());
+
+  const totalPipelineMs =
+    startedAtValues.length > 0 && endedAtValues.length > 0
+      ? Math.max(0, Math.max(...endedAtValues) - Math.min(...startedAtValues))
+      : undefined;
+
+  return {
+    scriptGenerationMs: getStepDuration(stepLogs, "script_generation"),
+    scenePlanningMs: getStepDuration(stepLogs, "scene_planning"),
+    videoGenerationMs: getStepDuration(stepLogs, "video_clip_generation"),
+    narrationGenerationMs: getStepDuration(stepLogs, "narration_generation"),
+    subtitleGenerationMs: getStepDuration(stepLogs, "subtitle_generation"),
+    renderingMs: getStepDuration(stepLogs, "ffmpeg_rendering"),
+    metadataGenerationMs: getStepDuration(stepLogs, "metadata_generation"),
+    totalPipelineMs,
+    recordedAt: new Date().toISOString()
+  };
 }
 
 export async function tracePipelineStep<T>(params: {

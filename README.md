@@ -1,36 +1,120 @@
 # AI Video Generator MVP
 
-Minimal prompt-to-video MVP built with Next.js, OpenAI, Replicate, and FFmpeg.
+An end-to-end AI video generation MVP that turns a single prompt into a rendered MP4 using Next.js, OpenAI, Replicate, FFmpeg, a local worker, and local-first persistence.
 
-## Overview
+## Project Overview
 
-This project takes a single user prompt and runs a local end-to-end pipeline that:
+This project was built to demonstrate a practical prompt-to-video pipeline with a clean MVP architecture:
 
-- generates a short script
-- plans scenes
-- creates video clips
-- generates narration audio
-- transcribes narration into subtitles
-- renders a final MP4
+- a Next.js frontend for prompt input, job tracking, and result playback
+- a lightweight API layer for job creation and status retrieval
+- a filesystem-backed local queue plus worker process for background generation
+- OpenAI for script generation, scene planning, narration, transcription, and metadata
+- Replicate for scene-level video clip generation
+- FFmpeg for final assembly, subtitle burn-in, and MP4 output
 
-Generated assets are stored on the local filesystem under the configured assets directory.
+The result is a developer-friendly local system that is easy to run, inspect, test, and extend.
+
+## Why This Project
+
+The goal is not to replicate a production-scale video platform. The goal is to show strong full-stack product engineering across:
+
+- AI workflow orchestration
+- background job processing
+- local-first persistence
+- media rendering
+- observability and operational readiness
+- clean MVP-focused architecture decisions
 
 ## Architecture
 
-See `docs/architecture.md` for the project structure and pipeline responsibilities.
+Architecture documentation lives in [docs/architecture.md](docs/architecture.md).
+
+Related assets:
+
+- Diagram source: [architecture-diagram.mmd](docs/architecture-diagram.mmd)
+- Rendered diagram: [architecture-diagram.svg](docs/architecture-diagram.svg)
+
+At a high level:
+
+- the frontend submits prompts and polls job state
+- the API server creates jobs and enqueues background work
+- the worker runs the full generation pipeline asynchronously
+- the pipeline persists job state, scenes, generated asset records, logs, metadata, and performance metrics
+- media files stay on the local filesystem while structured state lives in a local SQLite database
+
+## Pipeline
+
+The generation flow is:
+
+1. User submits a prompt.
+2. `POST /api/generate` creates a job and enqueues it.
+3. The worker claims the job from the local queue.
+4. OpenAI generates a title, narration script, and target duration.
+5. OpenAI converts the script into 4-6 structured scenes.
+6. Replicate generates a short video clip for each scene.
+7. OpenAI TTS generates a single narration audio track.
+8. OpenAI transcription creates timestamped subtitle segments.
+9. The subtitle utility converts transcript segments into `.srt`.
+10. FFmpeg normalizes clips, concatenates them, adds narration, burns subtitles, and renders the final MP4.
+11. OpenAI generates final video metadata such as description and tags.
+12. The UI exposes job status, metrics, logs, and the final result.
 
 ## Tech Stack
 
-- Next.js 14 with App Router
+- Next.js 14 App Router
 - TypeScript
+- React
 - TailwindCSS
-- OpenAI API for script generation, TTS, and transcription
-- Replicate for video clip generation
-- FFmpeg for local rendering
+- OpenAI API
+- Replicate API
+- FFmpeg
+- `sql.js` for local persistent storage
+- Vitest for automated testing
+- Docker Compose for containerized local development
 
-## Environment Variables
+## Features
 
-Required:
+- Prompt-to-video generation flow
+- Background worker and local queue
+- Persistent jobs, scenes, assets, logs, and metrics
+- Job polling UI with progress and execution trace
+- Result page with embedded playback and download
+- Demo CLI for non-UI generation
+- Mock providers for deterministic test coverage
+- Scheduled cleanup of temporary assets
+- Health check endpoint for local readiness verification
+
+## Installation
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+- FFmpeg installed locally and available in your shell
+
+### Setup
+
+1. Install dependencies:
+
+   `npm install`
+
+2. Create your local environment file:
+
+   Copy `.env.example` to `.env.local`
+
+3. Fill in the required environment variables.
+
+4. Start the app and worker in separate terminals:
+
+   - `npm run dev`
+   - `npm run worker`
+
+5. Open `http://localhost:3000`
+
+## Environment Setup
+
+Required variables:
 
 - `OPENAI_API_KEY`
 - `REPLICATE_API_TOKEN`
@@ -38,64 +122,92 @@ Required:
 - `FFMPEG_PATH`
 - `APP_URL`
 
-Optional:
+Common optional variables:
 
 - `OPENAI_MODEL`
 - `OPENAI_TTS_MODEL`
 - `REPLICATE_MODEL`
+- `CLEANUP_ENABLED`
+- `CLEANUP_INTERVAL_MINUTES`
+- `CLEANUP_TEMP_FILE_TTL_HOURS`
+- `CLEANUP_KEEP_FINAL_VIDEOS`
 
-Copy `.env.example` to `.env.local` and fill in the values before running the app.
+## Demo Generation
 
-## Setup Instructions
+You can run the pipeline without the UI using the demo CLI.
 
-1. Install Node.js 18+.
-2. Install FFmpeg locally and confirm it is available in your shell.
-3. Copy `.env.example` to `.env.local`.
-4. Fill in the required environment variables.
-5. Run `npm install`.
+Generate a video from a custom prompt:
 
-## Local Run Instructions
+`npm run demo -- "Create a cinematic 20 second promo video for a mindfulness app."`
 
-1. Start the web app with `npm run dev`.
-2. Start the background worker in a second terminal with `npm run worker`.
-3. Open `http://localhost:3000`.
-4. Submit a prompt from the homepage.
-5. Wait for the job status page to update through the pipeline.
-6. Open the result page when the job is completed.
+Use a curated prompt from the prompt library:
 
-## Pipeline Explanation
+- `npm run demo -- --list`
+- `npm run demo -- --random`
+- `npm run demo -- --prompt-id explainer-ai-notes`
 
-1. The homepage sends the user prompt to `POST /api/generate`.
-2. The API route creates a local job record and enqueues background work.
-3. The worker process claims queued jobs and runs the full generation pipeline asynchronously.
-4. OpenAI generates the video title, narration script, and target duration.
-5. OpenAI converts the script into structured scenes.
-6. Replicate generates a clip for each scene and stores each clip locally.
-7. OpenAI TTS generates one narration audio file for the combined scene narration.
-8. OpenAI transcription converts the narration audio into timed subtitle segments.
-9. A local utility converts the subtitle segments into one `.srt` file.
-10. FFmpeg normalizes clips, concatenates them, attaches narration, burns subtitles, and writes the final MP4.
-11. The completed job exposes the final video through the result page and video API route.
+The output video is written to the configured assets directory under the generated job folder.
+
+## Local Development
+
+Web app:
+
+- `npm run dev`
+
+Worker:
+
+- `npm run worker`
+
+Tests:
+
+- `npm test`
+- `npm run typecheck`
+- `npm run lint`
+
+Docker:
+
+- `docker compose up --build`
+
+## Screenshots
+
+Portfolio placeholders you can replace with real captures:
+
+- Homepage prompt input
+- Job status page with progress, logs, and metrics
+- Final result page with embedded video player
+- Architecture diagram preview
+
+Suggested image locations:
+
+- `docs/screenshots/homepage.png`
+- `docs/screenshots/job-status.png`
+- `docs/screenshots/result-page.png`
 
 ## Observability
 
-The pipeline records step-level execution traces for:
+The pipeline records:
 
-- script generation
-- scene planning
-- video clip generation
-- narration generation
-- subtitle generation
-- FFmpeg rendering
+- step-level execution logs
+- per-job performance metrics
+- persistent job state and generated asset metadata
 
-These traces are stored in the local database and also appended to a per-job log file at:
+Useful inspection points:
 
-- `assets/<job-id>/logs/pipeline.log.jsonl`
+- job API: `/api/jobs/<job-id>`
+- health endpoint: `/api/health`
+- per-job logs: `assets/<job-id>/logs/pipeline.log.jsonl`
+- local database: `assets/.data/video-generator.sqlite`
 
 ## Future Improvements
 
-- Background job execution instead of running the full pipeline inside the request
-- Better progress granularity for rendering and transcription
-- Cleanup tools for old local assets
-- Retry and recovery support for more pipeline stages
-- Better browser playback support with streaming or ranged video responses
+- richer render progress reporting
+- stronger failure recovery across more pipeline stages
+- advanced streaming for final video playback
+- improved queue controls and operational tooling
+- multi-user tenancy, auth, and hosted storage for a production version
+
+## Documentation
+
+- Architecture overview: [docs/architecture.md](docs/architecture.md)
+- Architecture diagram source: [docs/architecture-diagram.mmd](docs/architecture-diagram.mmd)
+- Architecture diagram: [docs/architecture-diagram.svg](docs/architecture-diagram.svg)

@@ -9,6 +9,10 @@ export type ServerEnv = {
   OPENAI_MODEL: string;
   OPENAI_TTS_MODEL: string;
   REPLICATE_MODEL: string;
+  CLEANUP_ENABLED: string;
+  CLEANUP_INTERVAL_MINUTES: string;
+  CLEANUP_TEMP_FILE_TTL_HOURS: string;
+  CLEANUP_KEEP_FINAL_VIDEOS: string;
 };
 
 function readRequiredString(env: RawEnv, key: keyof ServerEnv) {
@@ -57,6 +61,22 @@ export function loadServerEnv(rawEnv: RawEnv = process.env): ServerEnv {
       rawEnv,
       "REPLICATE_MODEL",
       "kwaivgi/kling-v1.6-standard"
+    ),
+    CLEANUP_ENABLED: readOptionalString(rawEnv, "CLEANUP_ENABLED", "true"),
+    CLEANUP_INTERVAL_MINUTES: readOptionalString(
+      rawEnv,
+      "CLEANUP_INTERVAL_MINUTES",
+      "30"
+    ),
+    CLEANUP_TEMP_FILE_TTL_HOURS: readOptionalString(
+      rawEnv,
+      "CLEANUP_TEMP_FILE_TTL_HOURS",
+      "24"
+    ),
+    CLEANUP_KEEP_FINAL_VIDEOS: readOptionalString(
+      rawEnv,
+      "CLEANUP_KEEP_FINAL_VIDEOS",
+      "true"
     )
   };
 }

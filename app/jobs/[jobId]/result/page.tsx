@@ -9,6 +9,7 @@ type JobResultPageProps = {
 
 export default async function JobResultPage({ params }: JobResultPageProps) {
   const job = await readVideoJob(params.jobId);
+  const metadata = job.videoMetadata;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-12">
@@ -17,9 +18,35 @@ export default async function JobResultPage({ params }: JobResultPageProps) {
           Final video
         </p>
         <h1 className="mt-3 font-display text-4xl leading-tight text-slate-900">
-          {job.title || "Generated video"}
+          {metadata?.title || job.title || "Generated video"}
         </h1>
         <p className="mt-4 text-sm leading-7 text-slate-600">{job.prompt}</p>
+
+        {metadata ? (
+          <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
+            <p className="text-sm leading-7 text-slate-700">{metadata.shortDescription}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {metadata.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+            <dl className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+              <div>
+                <dt className="font-semibold text-slate-900">Generated</dt>
+                <dd>{new Date(metadata.generationTimestamp).toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-900">Original prompt</dt>
+                <dd>{metadata.originalPrompt}</dd>
+              </div>
+            </dl>
+          </div>
+        ) : null}
 
         {job.status === "completed" && job.outputVideoPath ? (
           <>

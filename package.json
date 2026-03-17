@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "demo": "tsx scripts/demo-generate.ts",
     "worker": "tsx scripts/run-worker.ts"
   },
   "dependencies": {
@@ -24,9 +27,13 @@
     "@types/react-dom": "^18.3.5",
     "@types/sql.js": "^1.4.9",
     "autoprefixer": "^10.4.21",
+    "dotenv": "^16.6.1",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.35",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

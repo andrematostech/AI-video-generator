@@ -1,0 +1,95 @@
+flowchart LR
+    User[User Browser]
+
+    subgraph Frontend[Frontend]
+        Home[Next.js UI<br/>Prompt Form]
+        Status[Job Status Page]
+        Result[Result Page]
+    end
+
+    subgraph API[API Server]
+        Generate[POST /api/generate]
+        JobApi[GET /api/jobs/:id]
+        VideoApi[GET /api/jobs/:id/video]
+        Health[GET /api/health]
+    end
+
+    subgraph Queue[Job Queue]
+        QueueFiles[Filesystem Queue<br/>pending / processing / failed]
+        Worker[Worker Loop]
+    end
+
+    subgraph Pipeline[Generation Pipeline]
+        Script[Script Generation]
+        Scenes[Scene Planning]
+        Clips[Video Clip Generation]
+        Narration[Narration Generation]
+        Subtitles[Subtitle Generation]
+        Render[FFmpeg Rendering]
+        Metadata[Metadata Generation]
+    end
+
+    subgraph Providers[AI Providers]
+        OpenAI[OpenAI<br/>script / scenes / TTS / transcription / metadata]
+        Replicate[Replicate<br/>video clips]
+    end
+
+    subgraph Rendering[Rendering System]
+        FFmpeg[FFmpeg]
+    end
+
+    subgraph Storage[Storage]
+        Assets[Local Filesystem Assets<br/>clips / audio / subtitles / renders / final mp4]
+        Database[Local SQLite via sql.js<br/>jobs / scenes / assets / logs / metrics]
+    end
+
+    User --> Home
+    Home --> Generate
+    Status --> JobApi
+    Result --> JobApi
+    Result --> VideoApi
+    User --> Status
+    User --> Result
+
+    Generate --> Database
+    Generate --> QueueFiles
+    Health --> Database
+    Health --> Assets
+    Health --> FFmpeg
+
+    QueueFiles --> Worker
+    Worker --> Script
+
+    Script --> OpenAI
+    Script --> Database
+    Script --> Scenes
+
+    Scenes --> OpenAI
+    Scenes --> Database
+    Scenes --> Clips
+
+    Clips --> Replicate
+    Clips --> Assets
+    Clips --> Database
+    Clips --> Narration
+
+    Narration --> OpenAI
+    Narration --> Assets
+    Narration --> Database
+    Narration --> Subtitles
+
+    Subtitles --> OpenAI
+    Subtitles --> Assets
+    Subtitles --> Database
+    Subtitles --> Render
+
+    Render --> FFmpeg
+    Render --> Assets
+    Render --> Database
+    Render --> Metadata
+
+    Metadata --> OpenAI
+    Metadata --> Database
+
+    JobApi --> Database
+    VideoApi --> Assets

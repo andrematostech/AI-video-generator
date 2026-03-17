@@ -1,0 +1,38 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -lc "npm install && npm run dev -- --hostname 0.0.0.0"
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      FFMPEG_PATH: ffmpeg
+      ASSETS_DIR: /app/assets
+      APP_URL: http://localhost:3000
+    volumes:
+      - .:/app
+      - node_modules_web:/app/node_modules
+      - ./assets:/app/assets
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -lc "npm install && npm run worker"
+    env_file:
+      - .env.local
+    environment:
+      FFMPEG_PATH: ffmpeg
+      ASSETS_DIR: /app/assets
+      APP_URL: http://localhost:3000
+    volumes:
+      - .:/app
+      - node_modules_worker:/app/node_modules
+      - ./assets:/app/assets
+
+volumes:
+  node_modules_web:
+  node_modules_worker:

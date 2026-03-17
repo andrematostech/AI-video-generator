@@ -12,18 +12,26 @@ import {
 } from "@/lib/server/ffmpeg";
 import {
   generateScript,
-  generateVideoPlan
-} from "@/lib/providers/openai";
-import { generateNarrationAudio } from "@/lib/providers/openai-tts";
-import { transcribeNarration } from "@/lib/providers/openai-transcription";
-import { generateSceneClip } from "@/lib/providers/replicate";
-import { tracePipelineStep } from "@/lib/server/observability";
+  generateVideoMetadata,
+  generateVideoPlan,
+  generateNarrationAudio,
+  transcribeNarration,
+  generateSceneClip
+} from "@/lib/providers";
+import { buildPerformanceMetrics, readPipelineStepLogs, tracePipelineStep } from "@/lib/server/observability";
 import { buildSrt } from "@/lib/server/subtitles";
-import { GeneratedScript, VideoJobResult, VideoPlan, VideoScene } from "@/lib/types";
-import { recordGeneratedAsset, updateVideoJob } from "@/lib/server/jobs";
+import {
+  GeneratedScript,
+  VideoJobResult,
+  VideoMetadata,
+  VideoPlan,
+  VideoScene
+} from "@/lib/types";
+import { readVideoJob, recordGeneratedAsset, updateVideoJob } from "@/lib/server/jobs";
 
 export async function processVideoJob(jobId: string, prompt: string) {
   const directories = buildProjectPaths(jobId);
+  const existingJob = await readVideoJob(jobId);
 
   try {
     await ensureDirectories([
@@ -34,33 +42,66 @@ export async function processVideoJob(jobId: string, prompt: string) {
       directories.renderDirectory
     ]);
 
-    const generatedScript = await tracePipelineStep({
-      jobId,
-      stepName: "script_generation",
-      metadata: {
-        promptLength: prompt.length
-      },
-      run: () => runScriptStep(jobId, prompt),
-      onSuccessMetadata: (result) => ({
-        title: result.title,
-        targetDurationSeconds: result.targetDurationSeconds
-      })
-    });
-    const plan = await tracePipelineStep({
-      jobId,
-      stepName: "scene_planning",
-      metadata: {
-        targetDurationSeconds: generatedScript.targetDurationSeconds
-      },
-      run: () => runSceneStep(jobId, prompt, generatedScript),
-      onSuccessMetadata: (result) => ({
-        sceneCount: result.scenes.length,
-        totalPlannedDurationSeconds: result.scenes.reduce(
-          (sum, scene) => sum + scene.durationSeconds,
-          0
-        )
-      })
-    });
+    const generatedScript = existingJob.script
+      ? {
+          title: existingJob.title,
+          narrationScript: existingJob.script,
+          targetDurationSeconds: existingJob.targetDurationSeconds
+        }
+      : await tracePipelineStep({
+          jobId,
+          stepName: "script_generation",
+          metadata: {
+            promptLength: prompt.length
+          },
+          run: () => runScriptStep(jobId, prompt),
+          onSuccessMetadata: (result) => ({
+            title: result.title,
+            targetDurationSeconds: result.targetDurationSeconds
+          })
+        });
+    const plan =
+      existingJob.scenes.length > 0
+        ? {
+            title: existingJob.title,
+            script: existingJob.script,
+            targetDurationSeconds: existingJob.targetDurationSeconds,
+            scenes: existingJob.scenes.map((scene) => ({
+              ...scene,
+              clipPath: undefined
+            }))
+          }
+        : await tracePipelineStep({
+            jobId,
+            stepName: "scene_planning",
+            metadata: {
+              targetDurationSeconds: generatedScript.targetDurationSeconds
+            },
+            run: () => runSceneStep(jobId, prompt, generatedScript),
+            onSuccessMetadata: (result) => ({
+              sceneCount: result.scenes.length,
+              totalPlannedDurationSeconds: result.scenes.reduce(
+                (sum, scene) => sum + scene.durationSeconds,
+                0
+              )
+            })
+          });
+
+    if (existingJob.scenes.length === 0) {
+      return updateVideoJob(jobId, {
+        status: "awaiting_scene_approval",
+        title: plan.title,
+        script: plan.script,
+        targetDurationSeconds: plan.targetDurationSeconds,
+        scenes: plan.scenes,
+        progress: {
+          completedScenes: 0,
+          totalScenes: plan.scenes.length,
+          currentStep: "Review scenes and confirm before video generation"
+        }
+      });
+    }
+
     await tracePipelineStep({
       jobId,
       stepName: "video_clip_generation",
@@ -113,17 +154,33 @@ export async function processVideoJob(jobId: string, prompt: string) {
         outputVideoPath: result
       })
     });
+    const videoMetadata = await tracePipelineStep({
+      jobId,
+      stepName: "metadata_generation",
+      metadata: {
+        promptLength: prompt.length,
+        sceneCount: plan.scenes.length
+      },
+      run: () => runMetadataStep(jobId, prompt, plan),
+      onSuccessMetadata: (result) => ({
+        title: result.title,
+        tagCount: result.tags.length
+      })
+    });
+    const performanceMetrics = buildPerformanceMetrics(await readPipelineStepLogs(jobId));
 
     const result: VideoJobResult = {
       ...(await updateVideoJob(jobId, {
         status: "completed",
-        title: plan.title,
+        title: videoMetadata.title,
         narrationAudioPath,
         subtitlePath,
         outputVideoPath,
         script: plan.script,
         targetDurationSeconds: plan.targetDurationSeconds,
         scenes: plan.scenes,
+        videoMetadata,
+        performanceMetrics,
         progress: {
           completedScenes: plan.scenes.length,
           totalScenes: plan.scenes.length,
@@ -252,6 +309,31 @@ async function runSubtitleStep(
   await writeText(subtitlePath, buildSrt(subtitleSegments));
 
   return subtitlePath;
+}
+
+async function runMetadataStep(
+  jobId: string,
+  prompt: string,
+  plan: VideoPlan
+): Promise<VideoMetadata> {
+  await updatePipelineProgress(jobId, {
+    status: "rendering_video",
+    totalScenes: plan.scenes.length,
+    completedScenes: plan.scenes.length,
+    currentStep: "Generating video metadata"
+  });
+
+  const metadata = await generateVideoMetadata({
+    prompt,
+    script: plan.script,
+    scenes: plan.scenes
+  });
+
+  return {
+    ...metadata,
+    generationTimestamp: new Date().toISOString(),
+    originalPrompt: prompt
+  };
 }
 
 async function runRenderStep(

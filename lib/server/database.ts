@@ -28,7 +28,9 @@ const SCHEMA_SQL = `
     narration_audio_path TEXT,
     subtitle_path TEXT,
     output_video_path TEXT NOT NULL,
-    assets_directory TEXT NOT NULL
+    assets_directory TEXT NOT NULL,
+    video_metadata_json TEXT,
+    performance_metrics_json TEXT
   );
 
   CREATE TABLE IF NOT EXISTS scenes (
@@ -71,11 +73,31 @@ const SCHEMA_SQL = `
     updated_at TEXT NOT NULL,
     FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS rate_limit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    limiter_key TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL
+  );
 `;
 
 let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 let databaseHandlePromise: Promise<DatabaseHandle> | null = null;
 let writeChain = Promise.resolve();
+
+function ensureColumnExists(
+  db: Database,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string
+) {
+  const rows = mapRows<{ name: string }>(db, `PRAGMA table_info(${tableName})`);
+  const hasColumn = rows.some((row) => row.name === columnName);
+
+  if (!hasColumn) {
+    db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition}`);
+  }
+}
 
 function getDatabaseFilePath() {
   const env = getServerEnv();
@@ -103,6 +125,13 @@ async function openDatabase() {
     : new SQL.Database();
 
   db.run(SCHEMA_SQL);
+  ensureColumnExists(db, "jobs", "video_metadata_json", "video_metadata_json TEXT");
+  ensureColumnExists(
+    db,
+    "jobs",
+    "performance_metrics_json",
+    "performance_metrics_json TEXT"
+  );
 
   return {
     db,
@@ -159,4 +188,14 @@ export function mapRows<T>(db: Database, sql: string, params: SqlValue[] = []) {
 export function mapFirstRow<T>(db: Database, sql: string, params: SqlValue[] = []) {
   const rows = mapRows<T>(db, sql, params);
   return rows[0] ?? null;
+}
+
+export async function resetDatabaseForTests() {
+  if (databaseHandlePromise) {
+    const handle = await databaseHandlePromise;
+    handle.db.close();
+  }
+
+  databaseHandlePromise = null;
+  writeChain = Promise.resolve();
 }

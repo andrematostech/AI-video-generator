@@ -22,6 +22,26 @@ export type GeneratedAsset = {
   updatedAt: string;
 };
 
+export type VideoMetadata = {
+  title: string;
+  shortDescription: string;
+  tags: string[];
+  generationTimestamp: string;
+  originalPrompt: string;
+};
+
+export type VideoPerformanceMetrics = {
+  scriptGenerationMs?: number;
+  scenePlanningMs?: number;
+  videoGenerationMs?: number;
+  narrationGenerationMs?: number;
+  subtitleGenerationMs?: number;
+  renderingMs?: number;
+  metadataGenerationMs?: number;
+  totalPipelineMs?: number;
+  recordedAt: string;
+};
+
 export type PipelineStepLog = {
   id: number;
   jobId: string;
@@ -31,7 +51,8 @@ export type PipelineStepLog = {
     | "video_clip_generation"
     | "narration_generation"
     | "subtitle_generation"
-    | "ffmpeg_rendering";
+    | "ffmpeg_rendering"
+    | "metadata_generation";
   status: "running" | "completed" | "failed";
   startedAt: string;
   endedAt?: string;
@@ -59,10 +80,17 @@ export type GeneratedScript = {
   targetDurationSeconds: number;
 };
 
+export type GeneratedVideoMetadata = {
+  title: string;
+  shortDescription: string;
+  tags: string[];
+};
+
 export type VideoJobStatus =
   | "queued"
   | "generating_script"
   | "generating_scenes"
+  | "awaiting_scene_approval"
   | "generating_video_clips"
   | "generating_narration"
   | "generating_subtitles"
@@ -92,6 +120,8 @@ export type VideoJobResult = {
   subtitlePath?: string;
   outputVideoPath: string;
   assetsDirectory: string;
+  videoMetadata?: VideoMetadata;
+  performanceMetrics?: VideoPerformanceMetrics;
   generatedAssets: GeneratedAsset[];
   stepLogs: PipelineStepLog[];
 };

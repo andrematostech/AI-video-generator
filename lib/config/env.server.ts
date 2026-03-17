@@ -9,3 +9,7 @@ export function getServerEnv() {
 
   return cachedEnv;
 }
+
+export function resetServerEnvForTests() {
+  cachedEnv = null;
+}

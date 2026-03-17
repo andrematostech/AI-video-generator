@@ -1,9 +1,20 @@
 import OpenAI from "openai";
 import { getServerEnv } from "@/lib/config/env.server";
-import { GeneratedScript, VideoPlan, VideoScene } from "@/lib/types";
+import {
+  GeneratedScript,
+  GeneratedVideoMetadata,
+  VideoPlan,
+  VideoScene
+} from "@/lib/types";
 
 type ScenePlanResponse = {
   scenes: unknown;
+};
+
+type VideoMetadataResponse = {
+  title: unknown;
+  shortDescription: unknown;
+  tags: unknown;
 };
 
 function getOpenAiClient() {
@@ -30,6 +41,49 @@ function extractTextFromResponse(response: OpenAI.Responses.Response) {
   }
 
   return chunks.join("\n").trim();
+}
+
+export function parseGeneratedScript(input: unknown): GeneratedScript {
+  const parsed = input as Partial<GeneratedScript>;
+
+  if (!parsed.title || !parsed.narrationScript) {
+    throw new Error("OpenAI returned an invalid script response.");
+  }
+
+  return {
+    title: String(parsed.title),
+    narrationScript: String(parsed.narrationScript),
+    targetDurationSeconds: Number(parsed.targetDurationSeconds ?? 20)
+  };
+}
+
+export function parseGeneratedVideoMetadata(input: unknown): GeneratedVideoMetadata {
+  const parsed = input as Partial<VideoMetadataResponse>;
+
+  if (
+    typeof parsed.title !== "string" ||
+    parsed.title.trim().length === 0 ||
+    typeof parsed.shortDescription !== "string" ||
+    parsed.shortDescription.trim().length === 0 ||
+    !Array.isArray(parsed.tags)
+  ) {
+    throw new Error("OpenAI returned invalid video metadata.");
+  }
+
+  const tags = parsed.tags
+    .map((tag) => String(tag).trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (tags.length === 0) {
+    throw new Error("OpenAI returned invalid video metadata.");
+  }
+
+  return {
+    title: parsed.title.trim(),
+    shortDescription: parsed.shortDescription.trim(),
+    tags
+  };
 }
 
 export async function generateScript(prompt: string): Promise<GeneratedScript> {
@@ -65,17 +119,7 @@ export async function generateScript(prompt: string): Promise<GeneratedScript> {
   });
 
   const rawJson = extractTextFromResponse(response);
-  const parsed = JSON.parse(rawJson) as Partial<GeneratedScript>;
-
-  if (!parsed.title || !parsed.narrationScript) {
-    throw new Error("OpenAI returned an invalid script response.");
-  }
-
-  return {
-    title: String(parsed.title),
-    narrationScript: String(parsed.narrationScript),
-    targetDurationSeconds: Number(parsed.targetDurationSeconds ?? 20)
-  };
+  return parseGeneratedScript(JSON.parse(rawJson));
 }
 
 export async function generateVideoPlan(
@@ -170,7 +214,81 @@ export async function generateVideoPlan(
   };
 }
 
-function parseScenePlan(input: unknown): VideoScene[] {
+export async function generateVideoMetadata(params: {
+  prompt: string;
+  script: string;
+  scenes: VideoScene[];
+}): Promise<GeneratedVideoMetadata> {
+  const env = getServerEnv();
+  const response = await getOpenAiClient().responses.create({
+    model: env.OPENAI_MODEL,
+    input: [
+      {
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text:
+              "You create publish-ready metadata for short AI videos. Return strict JSON with title, shortDescription, and tags. Keep the title concise, write a one or two sentence description, and produce 3 to 6 short lowercase tags."
+          }
+        ]
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: JSON.stringify({
+              prompt: params.prompt,
+              script: params.script,
+              scenes: params.scenes.map((scene) => ({
+                sceneIndex: scene.sceneIndex,
+                narration: scene.narration,
+                videoPrompt: scene.videoPrompt,
+                durationSeconds: scene.durationSeconds
+              }))
+            })
+          }
+        ]
+      }
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "video_metadata",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "shortDescription", "tags"],
+          properties: {
+            title: {
+              type: "string",
+              minLength: 1
+            },
+            shortDescription: {
+              type: "string",
+              minLength: 1
+            },
+            tags: {
+              type: "array",
+              minItems: 3,
+              maxItems: 6,
+              items: {
+                type: "string",
+                minLength: 1
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const rawJson = extractTextFromResponse(response);
+  return parseGeneratedVideoMetadata(JSON.parse(rawJson));
+}
+
+export function parseScenePlan(input: unknown): VideoScene[] {
   if (!Array.isArray(input) || input.length < 4 || input.length > 6) {
     throw new Error("OpenAI returned an invalid scene list.");
   }

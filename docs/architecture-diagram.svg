@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1380" height="900" viewBox="0 0 1380 900" role="img" aria-labelledby="title desc">
+  <title id="title">AI Video Generator MVP Architecture</title>
+  <desc id="desc">Diagram showing frontend, API server, job queue, pipeline, AI providers, rendering system, and storage.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f4ee; }
+      .group { fill: #fffdf8; stroke: #d7c7aa; stroke-width: 2; rx: 18; ry: 18; }
+      .box { fill: #ffffff; stroke: #1f2937; stroke-width: 1.5; rx: 12; ry: 12; }
+      .accent { fill: #fff2d9; }
+      .text { font-family: Arial, Helvetica, sans-serif; fill: #0f172a; font-size: 15px; }
+      .small { font-size: 13px; }
+      .label { font-size: 20px; font-weight: 700; }
+      .line { stroke: #475569; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1380" height="900" />
+
+  <rect class="group" x="40" y="60" width="240" height="250" />
+  <text class="text label" x="60" y="95">Frontend</text>
+  <rect class="box accent" x="60" y="120" width="200" height="55" />
+  <text class="text" x="92" y="153">Next.js UI Prompt Form</text>
+  <rect class="box" x="60" y="190" width="200" height="55" />
+  <text class="text" x="99" y="223">Job Status Page</text>
+  <rect class="box" x="60" y="260" width="200" height="55" />
+  <text class="text" x="113" y="293">Result Page</text>
+
+  <rect class="group" x="320" y="60" width="260" height="320" />
+  <text class="text label" x="340" y="95">API Server</text>
+  <rect class="box accent" x="340" y="120" width="220" height="55" />
+  <text class="text" x="388" y="153">POST /api/generate</text>
+  <rect class="box" x="340" y="190" width="220" height="55" />
+  <text class="text" x="383" y="223">GET /api/jobs/:id</text>
+  <rect class="box" x="340" y="260" width="220" height="55" />
+  <text class="text" x="365" y="293">GET /api/jobs/:id/video</text>
+  <rect class="box" x="340" y="330" width="220" height="55" />
+  <text class="text" x="396" y="363">GET /api/health</text>
+
+  <rect class="group" x="620" y="60" width="260" height="220" />
+  <text class="text label" x="640" y="95">Job Queue</text>
+  <rect class="box accent" x="640" y="120" width="220" height="70" />
+  <text class="text" x="694" y="147">Filesystem Queue</text>
+  <text class="text small" x="680" y="168">pending / processing / failed</text>
+  <rect class="box" x="640" y="210" width="220" height="50" />
+  <text class="text" x="716" y="241">Worker Loop</text>
+
+  <rect class="group" x="920" y="40" width="280" height="470" />
+  <text class="text label" x="940" y="75">Pipeline</text>
+  <rect class="box accent" x="940" y="100" width="240" height="48" />
+  <text class="text" x="1013" y="130">Script Generation</text>
+  <rect class="box" x="940" y="160" width="240" height="48" />
+  <text class="text" x="1034" y="190">Scene Planning</text>
+  <rect class="box" x="940" y="220" width="240" height="48" />
+  <text class="text" x="1006" y="250">Video Clip Generation</text>
+  <rect class="box" x="940" y="280" width="240" height="48" />
+  <text class="text" x="1001" y="310">Narration Generation</text>
+  <rect class="box" x="940" y="340" width="240" height="48" />
+  <text class="text" x="1005" y="370">Subtitle Generation</text>
+  <rect class="box" x="940" y="400" width="240" height="48" />
+  <text class="text" x="1026" y="430">FFmpeg Rendering</text>
+  <rect class="box" x="940" y="460" width="240" height="48" />
+  <text class="text" x="1019" y="490">Metadata Generation</text>
+
+  <rect class="group" x="1220" y="60" width="130" height="250" />
+  <text class="text label" x="1236" y="95">Providers</text>
+  <rect class="box accent" x="1238" y="120" width="94" height="95" />
+  <text class="text" x="1253" y="145">OpenAI</text>
+  <text class="text small" x="1246" y="167">script</text>
+  <text class="text small" x="1246" y="184">scenes</text>
+  <text class="text small" x="1246" y="201">tts / tx / meta</text>
+  <rect class="box" x="1238" y="230" width="94" height="58" />
+  <text class="text" x="1249" y="264">Replicate</text>
+
+  <rect class="group" x="920" y="550" width="180" height="120" />
+  <text class="text label" x="940" y="585">Rendering</text>
+  <rect class="box accent" x="940" y="605" width="140" height="45" />
+  <text class="text" x="991" y="633">FFmpeg</text>
+
+  <rect class="group" x="40" y="400" width="820" height="220" />
+  <text class="text label" x="60" y="435">Storage</text>
+  <rect class="box accent" x="60" y="470" width="360" height="95" />
+  <text class="text" x="157" y="500">Local Filesystem Assets</text>
+  <text class="text small" x="104" y="526">clips / audio / subtitles / renders / final mp4</text>
+  <rect class="box" x="460" y="470" width="360" height="95" />
+  <text class="text" x="561" y="500">Local SQLite via sql.js</text>
+  <text class="text small" x="516" y="526">jobs / scenes / assets / logs / metrics</text>
+
+  <rect class="box" x="60" y="700" width="190" height="55" />
+  <text class="text" x="115" y="733">Developer / User</text>
+
+  <line class="line" x1="250" y1="727" x2="330" y2="727" />
+  <line class="line" x1="180" y1="700" x2="180" y2="315" />
+  <line class="line" x1="180" y1="315" x2="340" y2="147" />
+  <line class="line" x1="260" y1="217" x2="340" y2="217" />
+  <line class="line" x1="260" y1="287" x2="340" y2="287" />
+
+  <line class="line" x1="560" y1="147" x2="640" y2="155" />
+  <line class="line" x1="560" y1="217" x2="500" y2="217" />
+  <line class="line" x1="500" y1="217" x2="500" y2="470" />
+  <line class="line" x1="500" y1="470" x2="460" y2="470" />
+  <line class="line" x1="560" y1="287" x2="420" y2="287" />
+  <line class="line" x1="420" y1="287" x2="420" y2="470" />
+  <line class="line" x1="560" y1="357" x2="420" y2="357" />
+  <line class="line" x1="420" y1="357" x2="420" y2="470" />
+
+  <line class="line" x1="860" y1="235" x2="940" y2="124" />
+  <line class="line" x1="1060" y1="148" x2="1060" y2="160" />
+  <line class="line" x1="1060" y1="208" x2="1060" y2="220" />
+  <line class="line" x1="1060" y1="268" x2="1060" y2="280" />
+  <line class="line" x1="1060" y1="328" x2="1060" y2="340" />
+  <line class="line" x1="1060" y1="388" x2="1060" y2="400" />
+  <line class="line" x1="1060" y1="448" x2="1060" y2="460" />
+
+  <line class="line" x1="1180" y1="124" x2="1238" y2="145" />
+  <line class="line" x1="1180" y1="184" x2="1238" y2="170" />
+  <line class="line" x1="1180" y1="250" x2="1238" y2="259" />
+  <line class="line" x1="1180" y1="304" x2="1238" y2="170" />
+  <line class="line" x1="1180" y1="364" x2="1238" y2="170" />
+  <line class="line" x1="1180" y1="424" x2="940" y2="627" />
+  <line class="line" x1="1180" y1="484" x2="1238" y2="170" />
+
+  <line class="line" x1="1030" y1="650" x2="1030" y2="760" />
+  <line class="line" x1="1030" y1="760" x2="250" y2="760" />
+  <line class="line" x1="250" y1="760" x2="250" y2="565" />
+  <line class="line" x1="250" y1="565" x2="420" y2="565" />
+
+  <line class="line" x1="1060" y1="250" x2="240" y2="250" />
+  <line class="line" x1="240" y1="250" x2="240" y2="470" />
+  <line class="line" x1="1060" y1="310" x2="300" y2="310" />
+  <line class="line" x1="300" y1="310" x2="300" y2="470" />
+  <line class="line" x1="1060" y1="370" x2="360" y2="370" />
+  <line class="line" x1="360" y1="370" x2="360" y2="470" />
+  <line class="line" x1="1060" y1="430" x2="610" y2="470" />
+  <line class="line" x1="1060" y1="490" x2="700" y2="470" />
+</svg>

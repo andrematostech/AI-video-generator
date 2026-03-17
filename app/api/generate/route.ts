@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { buildProjectPaths } from "@/lib/server/filesystem";
 import { createVideoJob } from "@/lib/server/jobs";
 import { enqueueVideoJob } from "@/lib/server/queue";
+import {
+  consumeGenerateRateLimit,
+  getRateLimitKeyFromRequestHeaders
+} from "@/lib/server/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +19,27 @@ export async function POST(request: NextRequest) {
           error: "Prompt is required."
         },
         { status: 400 }
+      );
+    }
+
+    const rateLimit = await consumeGenerateRateLimit(
+      getRateLimitKeyFromRequestHeaders(request.headers)
+    );
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `Rate limit exceeded. Please wait ${rateLimit.retryAfterSeconds} seconds before creating another job.`,
+          retryAfterSeconds: rateLimit.retryAfterSeconds
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimit.retryAfterSeconds),
+            "X-RateLimit-Limit": String(rateLimit.limit),
+            "X-RateLimit-Remaining": String(rateLimit.remaining)
+          }
+        }
       );
     }
 
@@ -37,7 +62,13 @@ export async function POST(request: NextRequest) {
       enqueuedAt: new Date().toISOString()
     });
 
-    return NextResponse.json(job, { status: 202 });
+    return NextResponse.json(job, {
+      status: 202,
+      headers: {
+        "X-RateLimit-Limit": String(rateLimit.limit),
+        "X-RateLimit-Remaining": String(rateLimit.remaining)
+      }
+    });
   } catch (error) {
     return NextResponse.json(
       {

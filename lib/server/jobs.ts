@@ -7,7 +7,14 @@ import {
   runDatabaseWrite
 } from "@/lib/server/database";
 import { readPipelineStepLogs } from "@/lib/server/observability";
-import { GeneratedAsset, VideoJobResult, VideoJobStatus, VideoScene } from "@/lib/types";
+import {
+  GeneratedAsset,
+  VideoPerformanceMetrics,
+  VideoJobResult,
+  VideoJobStatus,
+  VideoMetadata,
+  VideoScene
+} from "@/lib/types";
 
 type JobRow = {
   id: string;
@@ -28,6 +35,8 @@ type JobRow = {
   subtitle_path: string | null;
   output_video_path: string;
   assets_directory: string;
+  video_metadata_json: string | null;
+  performance_metrics_json: string | null;
 };
 
 type SceneRow = {
@@ -47,6 +56,12 @@ type AssetRow = {
   file_path: string;
   source_url: string | null;
   created_at: string;
+  updated_at: string;
+};
+
+type JobSummaryRow = {
+  id: string;
+  status: VideoJobStatus;
   updated_at: string;
 };
 
@@ -80,9 +95,83 @@ function buildBaseJob(params: {
     subtitlePath: undefined,
     outputVideoPath: "",
     assetsDirectory: params.assetsDirectory,
+    videoMetadata: undefined,
     generatedAssets: [],
     stepLogs: []
   };
+}
+
+function parseVideoMetadata(value: string | null): VideoMetadata | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<VideoMetadata>;
+
+    if (
+      typeof parsed.title !== "string" ||
+      typeof parsed.shortDescription !== "string" ||
+      !Array.isArray(parsed.tags) ||
+      typeof parsed.generationTimestamp !== "string" ||
+      typeof parsed.originalPrompt !== "string"
+    ) {
+      return undefined;
+    }
+
+    return {
+      title: parsed.title,
+      shortDescription: parsed.shortDescription,
+      tags: parsed.tags.map((tag) => String(tag)),
+      generationTimestamp: parsed.generationTimestamp,
+      originalPrompt: parsed.originalPrompt
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function parsePerformanceMetrics(
+  value: string | null
+): VideoPerformanceMetrics | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<VideoPerformanceMetrics>;
+
+    if (typeof parsed.recordedAt !== "string") {
+      return undefined;
+    }
+
+    return {
+      scriptGenerationMs:
+        typeof parsed.scriptGenerationMs === "number" ? parsed.scriptGenerationMs : undefined,
+      scenePlanningMs:
+        typeof parsed.scenePlanningMs === "number" ? parsed.scenePlanningMs : undefined,
+      videoGenerationMs:
+        typeof parsed.videoGenerationMs === "number" ? parsed.videoGenerationMs : undefined,
+      narrationGenerationMs:
+        typeof parsed.narrationGenerationMs === "number"
+          ? parsed.narrationGenerationMs
+          : undefined,
+      subtitleGenerationMs:
+        typeof parsed.subtitleGenerationMs === "number"
+          ? parsed.subtitleGenerationMs
+          : undefined,
+      renderingMs: typeof parsed.renderingMs === "number" ? parsed.renderingMs : undefined,
+      metadataGenerationMs:
+        typeof parsed.metadataGenerationMs === "number"
+          ? parsed.metadataGenerationMs
+          : undefined,
+      totalPipelineMs:
+        typeof parsed.totalPipelineMs === "number" ? parsed.totalPipelineMs : undefined,
+      recordedAt: parsed.recordedAt
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function mapSceneRow(row: SceneRow): VideoScene {
@@ -131,6 +220,8 @@ function mapJobRecord(job: JobRow, scenes: SceneRow[], assets: AssetRow[]): Vide
     subtitlePath: job.subtitle_path ?? undefined,
     outputVideoPath: job.output_video_path,
     assetsDirectory: job.assets_directory,
+    videoMetadata: parseVideoMetadata(job.video_metadata_json),
+    performanceMetrics: parsePerformanceMetrics(job.performance_metrics_json),
     generatedAssets: assets.map(mapAssetRow),
     stepLogs: []
   };
@@ -344,8 +435,10 @@ export async function createVideoJob(params: {
           narration_audio_path,
           subtitle_path,
           output_video_path,
-          assets_directory
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          assets_directory,
+          video_metadata_json,
+          performance_metrics_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         job.id,
@@ -365,7 +458,9 @@ export async function createVideoJob(params: {
         job.narrationAudioPath ?? null,
         job.subtitlePath ?? null,
         job.outputVideoPath,
-        job.assetsDirectory
+        job.assetsDirectory,
+        job.videoMetadata ? JSON.stringify(job.videoMetadata) : null,
+        job.performanceMetrics ? JSON.stringify(job.performanceMetrics) : null
       ]
     );
   });
@@ -380,9 +475,12 @@ export async function updateVideoJob(
   }
 ) {
   const currentJob = await readVideoJob(jobId);
+  const normalizedUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([, value]) => value !== undefined)
+  ) as typeof updates;
   const nextJob: VideoJobResult = {
     ...currentJob,
-    ...updates,
+    ...normalizedUpdates,
     updatedAt: new Date().toISOString(),
     generatedAssets: currentJob.generatedAssets,
     stepLogs: currentJob.stepLogs
@@ -408,7 +506,9 @@ export async function updateVideoJob(
           narration_audio_path = ?,
           subtitle_path = ?,
           output_video_path = ?,
-          assets_directory = ?
+          assets_directory = ?,
+          video_metadata_json = ?,
+          performance_metrics_json = ?
         WHERE id = ?
       `,
       [
@@ -428,16 +528,18 @@ export async function updateVideoJob(
         nextJob.subtitlePath ?? null,
         nextJob.outputVideoPath,
         nextJob.assetsDirectory,
+        nextJob.videoMetadata ? JSON.stringify(nextJob.videoMetadata) : null,
+        nextJob.performanceMetrics ? JSON.stringify(nextJob.performanceMetrics) : null,
         jobId
       ]
     );
   });
 
-  if (updates.scenes) {
-    await persistScenes(jobId, updates.scenes);
+  if (normalizedUpdates.scenes) {
+    await persistScenes(jobId, normalizedUpdates.scenes);
   }
 
-  await persistAssetMetadata(jobId, updates);
+  await persistAssetMetadata(jobId, normalizedUpdates);
 
   return readVideoJob(jobId);
 }
@@ -451,5 +553,61 @@ export async function markVideoJobFailed(jobId: string, error: string) {
       totalScenes: 0,
       currentStep: "Job failed"
     }
+  });
+}
+
+export async function listJobsForCleanup(params: {
+  updatedBeforeIso: string;
+}) {
+  return runDatabaseRead((db) =>
+    mapRows<JobSummaryRow>(
+      db,
+      `
+        SELECT id, status, updated_at
+        FROM jobs
+        WHERE updated_at < ?
+          AND status IN ('completed', 'failed')
+        ORDER BY updated_at ASC
+      `,
+      [params.updatedBeforeIso]
+    )
+  );
+}
+
+export async function removeGeneratedAssetsForJob(params: {
+  jobId: string;
+  assetTypes: GeneratedAsset["assetType"][];
+}) {
+  await runDatabaseWrite((db) => {
+    for (const assetType of params.assetTypes) {
+      db.run(
+        "DELETE FROM generated_assets WHERE job_id = ? AND asset_type = ?",
+        [params.jobId, assetType]
+      );
+    }
+  });
+}
+
+export async function clearJobTemporaryArtifactReferences(jobId: string) {
+  await runDatabaseWrite((db) => {
+    db.run(
+      `
+        UPDATE jobs
+        SET
+          narration_audio_path = NULL,
+          subtitle_path = NULL
+        WHERE id = ?
+      `,
+      [jobId]
+    );
+
+    db.run(
+      `
+        UPDATE scenes
+        SET clip_path = NULL
+        WHERE job_id = ?
+      `,
+      [jobId]
+    );
   });
 }

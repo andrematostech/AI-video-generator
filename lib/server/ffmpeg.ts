@@ -33,11 +33,11 @@ function runFfmpeg(args: string[]) {
   });
 }
 
-export async function renderSceneClip(options: {
+export function buildRenderSceneClipArgs(options: {
   clipPath: string;
   outputPath: string;
 }) {
-  await runFfmpeg([
+  return [
     "-y",
     "-i",
     options.clipPath,
@@ -53,14 +53,25 @@ export async function renderSceneClip(options: {
     "yuv420p",
     "-an",
     options.outputPath
-  ]);
+  ];
+}
+
+export async function renderSceneClip(options: {
+  clipPath: string;
+  outputPath: string;
+}) {
+  await runFfmpeg(buildRenderSceneClipArgs(options));
+}
+
+export function buildConcatListContent(scenePaths: string[]) {
+  return scenePaths
+    .map((scenePath) => `file '${scenePath.replace(/'/g, "'\\''")}'`)
+    .join("\n");
 }
 
 export async function concatenateScenes(scenePaths: string[], outputPath: string) {
   const listFilePath = path.join(path.dirname(outputPath), "concat.txt");
-  const listContent = scenePaths
-    .map((scenePath) => `file '${scenePath.replace(/'/g, "'\\''")}'`)
-    .join("\n");
+  const listContent = buildConcatListContent(scenePaths);
 
   await writeFile(listFilePath, listContent, "utf8");
 
@@ -78,7 +89,7 @@ export async function concatenateScenes(scenePaths: string[], outputPath: string
   ]);
 }
 
-export async function addNarrationTrack(options: {
+export function buildAddNarrationTrackArgs(options: {
   videoPath: string;
   narrationPath: string;
   subtitlePath?: string;
@@ -88,7 +99,7 @@ export async function addNarrationTrack(options: {
     ? options.subtitlePath.replace(/\\/g, "/").replace(/:/g, "\\:")
     : null;
 
-  await runFfmpeg([
+  return [
     "-y",
     "-i",
     options.videoPath,
@@ -122,5 +133,14 @@ export async function addNarrationTrack(options: {
     "192k",
     "-shortest",
     options.outputPath
-  ]);
+  ];
+}
+
+export async function addNarrationTrack(options: {
+  videoPath: string;
+  narrationPath: string;
+  subtitlePath?: string;
+  outputPath: string;
+}) {
+  await runFfmpeg(buildAddNarrationTrackArgs(options));
 }

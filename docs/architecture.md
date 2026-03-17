@@ -1,5 +1,9 @@
 # Architecture Overview
 
+![AI Video Generator MVP architecture](./architecture-diagram.svg)
+
+Diagram source: `docs/architecture-diagram.mmd`
+
 ## Goals
 
 The current architecture is intentionally small and local-first:
@@ -34,7 +38,7 @@ The current architecture is intentionally small and local-first:
 2. `POST /api/generate` starts the pipeline.
 3. The API route creates a local job record and adds a queue item.
 4. The worker claims the next queued job and runs the pipeline asynchronously.
-5. Each pipeline stage updates the job JSON with status and progress.
+5. Each pipeline stage updates persisted job state, logs, and metrics in the local database.
 6. The status page polls `GET /api/jobs/[jobId]`.
 7. The result page loads the completed job and embeds the final video from `GET /api/jobs/[jobId]/video`.
 
@@ -63,16 +67,21 @@ The current architecture is intentionally small and local-first:
 
 ## Persistence Model
 
-Each job gets its own directory:
+The MVP uses two local persistence layers:
+
+- A local SQLite database under `assets/.data/video-generator.sqlite`
+- Per-job filesystem asset directories under `assets/<job-id>/`
+
+Each job gets its own asset directory:
 
 - `assets/<job-id>/clips/`
 - `assets/<job-id>/audio/`
 - `assets/<job-id>/subtitles/`
 - `assets/<job-id>/render/`
-- `assets/<job-id>/job.json`
 - `assets/<job-id>/final-video.mp4`
 
-The job state lives in `job.json` and is updated throughout the pipeline.
+Structured job state, scenes, generated asset records, step logs, and performance metrics live in the database.
+Binary and media artifacts stay on the local filesystem.
 
 Queue files live under:
 

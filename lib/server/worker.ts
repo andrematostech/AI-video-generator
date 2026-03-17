@@ -1,3 +1,5 @@
+import { startCleanupScheduler } from "@/lib/server/cleanup";
+import { buildPerformanceMetrics, readPipelineStepLogs } from "@/lib/server/observability";
 import { processVideoJob } from "@/lib/server/pipeline";
 import {
   claimNextVideoJob,
@@ -37,11 +39,16 @@ export async function processQueueOnce() {
       error instanceof Error ? error.message : "Unexpected error while processing queued job.";
 
     if (item.attempt < item.maxAttempts) {
+      const performanceMetrics = buildPerformanceMetrics(
+        await readPipelineStepLogs(item.jobId)
+      );
+
       await updateVideoJob(item.jobId, {
         status: "queued",
         attemptCount: item.attempt,
         maxAttempts: item.maxAttempts,
         error: message,
+        performanceMetrics,
         progress: {
           completedScenes: 0,
           totalScenes: 0,
@@ -53,9 +60,14 @@ export async function processQueueOnce() {
       return true;
     }
 
+    const performanceMetrics = buildPerformanceMetrics(
+      await readPipelineStepLogs(item.jobId)
+    );
+
     await updateVideoJob(item.jobId, {
       attemptCount: item.attempt,
-      maxAttempts: item.maxAttempts
+      maxAttempts: item.maxAttempts,
+      performanceMetrics
     });
     await markVideoJobFailed(item.jobId, message);
     await moveClaimedVideoJobToFailed(item, processingPath, message);
@@ -66,9 +78,11 @@ export async function processQueueOnce() {
 
 export async function startWorkerLoop(pollIntervalMs = DEFAULT_POLL_INTERVAL_MS) {
   let shouldStop = false;
+  const stopCleanupScheduler = startCleanupScheduler();
 
   const stop = () => {
     shouldStop = true;
+    stopCleanupScheduler();
   };
 
   process.once("SIGINT", stop);
