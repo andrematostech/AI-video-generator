@@ -3,7 +3,8 @@ import type {
   GeneratedVideoMetadata,
   SubtitleSegment,
   VideoPlan,
-  VideoScene
+  VideoScene,
+  VideoStyleMode
 } from "@/lib/types";
 import {
   generateScript as generateRealScript,
@@ -26,7 +27,11 @@ type GenerateClipParams = {
   prompt: string;
   durationSeconds: number;
   outputPath: string;
+  negativePrompt?: string;
+  cfgScale?: number;
+  startImagePath?: string;
   maxRetries?: number;
+  shouldCancel?: () => Promise<boolean>;
 };
 
 let providerModeOverride: "real" | "mock" | null = null;
@@ -43,19 +48,23 @@ export function setProviderModeForTests(mode: "real" | "mock" | null) {
   providerModeOverride = mode;
 }
 
-export async function generateScript(prompt: string): Promise<GeneratedScript> {
+export async function generateScript(
+  prompt: string,
+  styleMode: VideoStyleMode = "realistic"
+): Promise<GeneratedScript> {
   return shouldUseMockProviders()
-    ? generateMockScript(prompt)
-    : generateRealScript(prompt);
+    ? generateMockScript(prompt, styleMode)
+    : generateRealScript(prompt, styleMode);
 }
 
 export async function generateVideoPlan(
   prompt: string,
-  script: GeneratedScript
+  script: GeneratedScript,
+  styleMode: VideoStyleMode = "realistic"
 ): Promise<VideoPlan> {
   return shouldUseMockProviders()
-    ? generateMockVideoPlan(prompt, script)
-    : generateRealVideoPlan(prompt, script);
+    ? generateMockVideoPlan(prompt, script, styleMode)
+    : generateRealVideoPlan(prompt, script, styleMode);
 }
 
 export async function generateVideoMetadata(params: {

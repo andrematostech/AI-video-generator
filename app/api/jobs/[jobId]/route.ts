@@ -69,7 +69,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     };
 
     if (body.action === "cancel") {
-      if (job.status !== "queued" && job.status !== "awaiting_scene_approval") {
+      if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
         return NextResponse.json(
           {
             error: "This job can no longer be cancelled from the UI."
@@ -81,10 +81,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       await removePendingVideoJobs(job.id);
 
       const updatedJob = await updateVideoJob(job.id, {
-        status: "failed",
+        status: "cancelled",
         error: "Cancelled by user.",
         progress: {
-          completedScenes: 0,
+          completedScenes: job.progress.completedScenes,
           totalScenes: job.progress.totalScenes,
           currentStep: "Cancelled by user"
         }
@@ -109,12 +109,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       const updatedJob = await updateVideoJob(job.id, {
         status: "queued",
         scenes,
-        error: undefined,
         progress: {
           completedScenes: 0,
           totalScenes: scenes.length,
           currentStep: "Queued after scene approval"
         }
+      }, {
+        clearError: true
       });
 
       await enqueueVideoJob({

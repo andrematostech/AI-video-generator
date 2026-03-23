@@ -1,11 +1,22 @@
 import path from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { getServerEnv } from "@/lib/config/env.server";
-import { GeneratedAsset, PipelineStepLog, VideoJobResult, VideoJobStatus } from "@/lib/types";
+import {
+  GeneratedAsset,
+  PipelineStepLog,
+  VideoGenerationControls,
+  VideoJobResult,
+  VideoJobStatus,
+  VideoResolution,
+  VideoStyleMode
+} from "@/lib/types";
 
 type StoredJob = {
   id: string;
   prompt: string;
+  videoResolution: VideoResolution;
+  videoStyleMode: VideoStyleMode;
+  generationControls: VideoGenerationControls;
   status: VideoJobStatus;
   attemptCount: number;
   maxAttempts: number;
@@ -114,7 +125,16 @@ async function loadStore() {
     return {
       ...EMPTY_STORE,
       ...parsed,
-      jobs: parsed.jobs ?? [],
+      jobs: (parsed.jobs ?? []).map((job) => ({
+        ...job,
+        videoResolution: job.videoResolution ?? "720p",
+        videoStyleMode: job.videoStyleMode ?? "realistic",
+        generationControls: {
+          cfgScale: job.generationControls?.cfgScale ?? 0.5,
+          negativePrompt: job.generationControls?.negativePrompt,
+          startImagePath: job.generationControls?.startImagePath
+        }
+      })),
       scenes: parsed.scenes ?? [],
       generatedAssets: parsed.generatedAssets ?? [],
       pipelineStepLogs: parsed.pipelineStepLogs ?? [],
@@ -165,4 +185,26 @@ export async function runDatabaseRead<T>(
 
 export async function resetDatabaseForTests() {
   writeChain = Promise.resolve();
+}
+
+export async function pruneDatabaseJobs(options: {
+  keepLatestJobs: number;
+  keepJobIds?: string[];
+}) {
+  return runDatabaseWrite((store) => {
+    const keepJobIds = new Set(options.keepJobIds ?? []);
+    const keepLatestJobs = Math.max(0, options.keepLatestJobs);
+    const sortedJobs = [...store.jobs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const recentJobIds = new Set(sortedJobs.slice(0, keepLatestJobs).map((job) => job.id));
+    const retainedJobIds = new Set([...keepJobIds, ...recentJobIds]);
+
+    store.jobs = store.jobs.filter((job) => retainedJobIds.has(job.id));
+    store.scenes = store.scenes.filter((scene) => retainedJobIds.has(scene.jobId));
+    store.generatedAssets = store.generatedAssets.filter((asset) => retainedJobIds.has(asset.jobId));
+    store.pipelineStepLogs = store.pipelineStepLogs.filter((log) => retainedJobIds.has(log.jobId));
+
+    return {
+      retainedJobIds: [...retainedJobIds]
+    };
+  });
 }

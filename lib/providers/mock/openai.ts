@@ -5,7 +5,8 @@ import {
   GeneratedVideoMetadata,
   SubtitleSegment,
   VideoPlan,
-  VideoScene
+  VideoScene,
+  VideoStyleMode
 } from "@/lib/types";
 
 function buildMockScenes(): VideoScene[] {
@@ -37,7 +38,10 @@ function buildMockScenes(): VideoScene[] {
   ];
 }
 
-export async function generateMockScript(prompt: string): Promise<GeneratedScript> {
+export async function generateMockScript(
+  prompt: string,
+  _styleMode: VideoStyleMode = "realistic"
+): Promise<GeneratedScript> {
   const normalizedPrompt = prompt.trim() || "Mock video";
 
   return {
@@ -54,7 +58,8 @@ export async function generateMockScript(prompt: string): Promise<GeneratedScrip
 
 export async function generateMockVideoPlan(
   _prompt: string,
-  script: GeneratedScript
+  script: GeneratedScript,
+  _styleMode: VideoStyleMode = "realistic"
 ): Promise<VideoPlan> {
   return {
     title: script.title,

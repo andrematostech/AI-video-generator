@@ -9,10 +9,10 @@
 body {
   @apply min-h-screen font-body text-white antialiased;
   background-image:
-    radial-gradient(circle at 50% 10%, rgba(144, 116, 255, 0.34), transparent 18%),
-    radial-gradient(circle at 50% 22%, rgba(90, 136, 255, 0.22), transparent 24%),
-    radial-gradient(circle at 18% 72%, rgba(255, 187, 120, 0.08), transparent 18%),
-    radial-gradient(circle at 82% 24%, rgba(255, 255, 255, 0.06), transparent 12%),
+    radial-gradient(circle at 50% 10%, rgba(144, 116, 255, 0.22), transparent 20%),
+    radial-gradient(circle at 50% 22%, rgba(90, 136, 255, 0.14), transparent 25%),
+    radial-gradient(circle at 18% 72%, rgba(255, 187, 120, 0.05), transparent 18%),
+    radial-gradient(circle at 82% 24%, rgba(255, 255, 255, 0.04), transparent 13%),
     linear-gradient(180deg, #05070c 0%, #0a0d16 38%, #0b0f19 62%, #070910 100%);
   position: relative;
 }
@@ -38,10 +38,10 @@ body::after {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 16%, rgba(133, 111, 255, 0.18), transparent 24%),
-    radial-gradient(circle at 50% 28%, rgba(88, 140, 255, 0.1), transparent 28%);
-  filter: blur(18px);
-  opacity: 0.95;
+    radial-gradient(circle at 50% 16%, rgba(133, 111, 255, 0.12), transparent 25%),
+    radial-gradient(circle at 50% 28%, rgba(88, 140, 255, 0.06), transparent 29%);
+  filter: blur(20px);
+  opacity: 0.7;
   z-index: 0;
 }
 
@@ -81,10 +81,10 @@ body::after {
     inset: 0;
     pointer-events: none;
     background:
-      radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.1), transparent 16%),
-      radial-gradient(circle at 50% 24%, rgba(124, 93, 255, 0.18), transparent 22%),
-      radial-gradient(circle at 50% 28%, rgba(75, 139, 255, 0.14), transparent 26%);
-    filter: blur(4px);
+      radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.06), transparent 16%),
+      radial-gradient(circle at 50% 24%, rgba(124, 93, 255, 0.12), transparent 23%),
+      radial-gradient(circle at 50% 28%, rgba(75, 139, 255, 0.08), transparent 27%);
+    filter: blur(5px);
   }
 
   .surface-elevated {
@@ -104,15 +104,15 @@ body::after {
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.06),
       0 0 0 1px rgba(125, 143, 255, 0.12),
-      0 0 32px rgba(93, 124, 255, 0.22);
+      0 0 24px rgba(93, 124, 255, 0.16);
   }
 
   .hero-button {
     @apply inline-flex items-center justify-center text-base font-semibold text-white transition duration-200;
     background-image: linear-gradient(90deg, #5da3ff 0%, #7e87ff 44%, #cb7eff 100%);
     box-shadow:
-      0 0 34px rgba(110, 121, 255, 0.32),
-      0 10px 30px rgba(70, 79, 166, 0.28);
+      0 0 22px rgba(110, 121, 255, 0.2),
+      0 10px 24px rgba(70, 79, 166, 0.22);
   }
 
   .hero-button:hover {
@@ -133,8 +133,52 @@ body::after {
   }
 }
 
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes progress-scan {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  100% {
+    transform: translateX(230%);
+  }
+}
+
+@keyframes shimmer-border {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(244, 217, 182, 0), 0 0 0 rgba(124, 138, 255, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 28px rgba(244, 217, 182, 0.12), 0 0 48px rgba(124, 138, 255, 0.16);
+  }
+}
+
 @layer utilities {
   .animate-fade-up {
     animation: fade-up 700ms ease forwards;
+  }
+
+  .animate-pulse-soft {
+    animation: pulse-soft 1.8s ease-in-out infinite;
+  }
+
+  .animate-progress-scan {
+    animation: progress-scan 2.2s linear infinite;
+  }
+
+  .animate-shimmer-border {
+    animation: shimmer-border 2.2s ease-in-out infinite;
   }
 }

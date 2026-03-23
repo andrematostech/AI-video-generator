@@ -18,6 +18,16 @@ describe("FFmpeg command builders", () => {
     expect(args.at(-1)).toBe("render/scene-1.mp4");
   });
 
+  it("builds 1080p render args when requested", () => {
+    const args = buildRenderSceneClipArgs({
+      clipPath: "clips/scene-1.mp4",
+      outputPath: "render/scene-1.mp4",
+      videoResolution: "1080p"
+    });
+
+    expect(args.join(" ")).toContain("scale=1920:1080");
+  });
+
   it("builds concat file content with escaped paths", () => {
     const content = buildConcatListContent([
       "render/scene-1.mp4",

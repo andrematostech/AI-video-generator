@@ -3,15 +3,21 @@ import { runDatabaseRead, runDatabaseWrite } from "@/lib/server/database";
 import { readPipelineStepLogs } from "@/lib/server/observability";
 import {
   GeneratedAsset,
+  VideoGenerationControls,
+  VideoResolution,
   VideoJobResult,
   VideoJobStatus,
-  VideoScene
+  VideoScene,
+  VideoStyleMode
 } from "@/lib/types";
 
 function buildBaseJob(params: {
   id: string;
   prompt: string;
   assetsDirectory: string;
+  videoResolution?: VideoResolution;
+  videoStyleMode?: VideoStyleMode;
+  generationControls?: VideoGenerationControls;
   maxAttempts?: number;
 }): VideoJobResult {
   const now = new Date().toISOString();
@@ -20,6 +26,13 @@ function buildBaseJob(params: {
   return {
     id: params.id,
     prompt: params.prompt,
+    videoResolution: params.videoResolution ?? "720p",
+    videoStyleMode: params.videoStyleMode ?? "realistic",
+    generationControls: {
+      cfgScale: params.generationControls?.cfgScale ?? 0.5,
+      negativePrompt: params.generationControls?.negativePrompt,
+      startImagePath: params.generationControls?.startImagePath
+    },
     status: "queued",
     attemptCount: 0,
     maxAttempts,
@@ -64,6 +77,9 @@ function stripJobRelations(job: VideoJobResult) {
   return {
     id: job.id,
     prompt: job.prompt,
+    videoResolution: job.videoResolution,
+    videoStyleMode: job.videoStyleMode,
+    generationControls: job.generationControls,
     status: job.status,
     attemptCount: job.attemptCount,
     maxAttempts: job.maxAttempts,
@@ -143,6 +159,7 @@ export async function listQueuedVideoJobs() {
       .map((job) => ({
         id: job.id,
         prompt: job.prompt,
+        videoStyleMode: job.videoStyleMode,
         attemptCount: job.attemptCount,
         maxAttempts: job.maxAttempts
       }))
@@ -164,6 +181,9 @@ export async function createVideoJob(params: {
   id: string;
   prompt: string;
   assetsDirectory: string;
+  videoResolution?: VideoResolution;
+  videoStyleMode?: VideoStyleMode;
+  generationControls?: VideoGenerationControls;
   maxAttempts?: number;
 }) {
   const job = buildBaseJob(params);
@@ -180,6 +200,9 @@ export async function updateVideoJob(
   jobId: string,
   updates: Partial<Omit<VideoJobResult, "id" | "createdAt" | "assetsDirectory" | "generatedAssets" | "stepLogs">> & {
     status?: VideoJobStatus;
+  },
+  options?: {
+    clearError?: boolean;
   }
 ) {
   const currentJob = await readVideoJob(jobId);
@@ -194,6 +217,10 @@ export async function updateVideoJob(
     stepLogs: currentJob.stepLogs
   };
 
+  if (options?.clearError) {
+    nextJob.error = undefined;
+  }
+
   await runDatabaseWrite((store) => {
     const jobIndex = store.jobs.findIndex((entry) => entry.id === jobId);
 
@@ -204,6 +231,9 @@ export async function updateVideoJob(
     store.jobs[jobIndex] = {
       id: nextJob.id,
       prompt: nextJob.prompt,
+      videoResolution: nextJob.videoResolution,
+      videoStyleMode: nextJob.videoStyleMode,
+      generationControls: nextJob.generationControls,
       status: nextJob.status,
       attemptCount: nextJob.attemptCount,
       maxAttempts: nextJob.maxAttempts,
@@ -335,7 +365,7 @@ export async function listJobsForCleanup(params: {
       .filter(
         (job) =>
           job.updatedAt < params.updatedBeforeIso &&
-          (job.status === "completed" || job.status === "failed")
+          (job.status === "completed" || job.status === "failed" || job.status === "cancelled")
       )
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       .map((job) => ({
@@ -378,4 +408,9 @@ export async function clearJobTemporaryArtifactReferences(jobId: string) {
         : scene
     );
   });
+}
+
+export async function isVideoJobCancelled(jobId: string) {
+  const job = await readVideoJob(jobId);
+  return job.status === "cancelled";
 }

@@ -2,10 +2,23 @@ import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getServerEnv } from "@/lib/config/env.server";
+import { VideoResolution } from "@/lib/types";
 
-const TARGET_WIDTH = 1280;
-const TARGET_HEIGHT = 720;
 const TARGET_FPS = 30;
+
+function getResolutionDimensions(videoResolution: VideoResolution = "720p") {
+  if (videoResolution === "1080p") {
+    return {
+      width: 1920,
+      height: 1080
+    };
+  }
+
+  return {
+    width: 1280,
+    height: 720
+  };
+}
 
 function runFfmpeg(args: string[]) {
   const env = getServerEnv();
@@ -36,13 +49,16 @@ function runFfmpeg(args: string[]) {
 export function buildRenderSceneClipArgs(options: {
   clipPath: string;
   outputPath: string;
+  videoResolution?: VideoResolution;
 }) {
+  const target = getResolutionDimensions(options.videoResolution);
+
   return [
     "-y",
     "-i",
     options.clipPath,
     "-vf",
-    `scale=${TARGET_WIDTH}:${TARGET_HEIGHT}:force_original_aspect_ratio=decrease,pad=${TARGET_WIDTH}:${TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${TARGET_FPS},format=yuv420p`,
+    `scale=${target.width}:${target.height}:force_original_aspect_ratio=decrease,pad=${target.width}:${target.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${TARGET_FPS},format=yuv420p`,
     "-c:v",
     "libx264",
     "-preset",
@@ -59,6 +75,7 @@ export function buildRenderSceneClipArgs(options: {
 export async function renderSceneClip(options: {
   clipPath: string;
   outputPath: string;
+  videoResolution?: VideoResolution;
 }) {
   await runFfmpeg(buildRenderSceneClipArgs(options));
 }

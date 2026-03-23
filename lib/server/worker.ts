@@ -10,12 +10,16 @@ import {
   recoverProcessingQueueItems,
   retryClaimedVideoJob
 } from "@/lib/server/queue";
-import { listQueuedVideoJobs, markVideoJobFailed, updateVideoJob } from "@/lib/server/jobs";
+import { isVideoJobCancelled, listQueuedVideoJobs, markVideoJobFailed, updateVideoJob } from "@/lib/server/jobs";
 
 const DEFAULT_POLL_INTERVAL_MS = 1500;
 
 function isMissingJobError(error: unknown) {
   return error instanceof Error && error.message.startsWith("Job not found:");
+}
+
+function isCancelledJobError(error: unknown) {
+  return error instanceof Error && error.message === "Job was cancelled by user.";
 }
 
 async function recoverQueueState() {
@@ -61,15 +65,23 @@ export async function processQueueOnce() {
 
   try {
     console.log(`[worker] Claimed job ${item.jobId} (attempt ${item.attempt}/${item.maxAttempts}).`);
+
+    if (await isVideoJobCancelled(item.jobId)) {
+      await completeClaimedVideoJob(processingPath);
+      console.log(`[worker] Discarded cancelled job ${item.jobId}.`);
+      return true;
+    }
+
     await updateVideoJob(item.jobId, {
       attemptCount: item.attempt,
       maxAttempts: item.maxAttempts,
-      error: undefined,
       progress: {
         completedScenes: 0,
         totalScenes: 0,
         currentStep: `Worker started attempt ${item.attempt} of ${item.maxAttempts}`
       }
+    }, {
+      clearError: true
     });
 
     await processVideoJob(item.jobId, item.prompt);
@@ -79,6 +91,12 @@ export async function processQueueOnce() {
     if (isMissingJobError(error)) {
       await completeClaimedVideoJob(processingPath);
       console.log(`[worker] Discarded orphaned queue item for missing job ${item.jobId}.`);
+      return true;
+    }
+
+    if (isCancelledJobError(error) || (await isVideoJobCancelled(item.jobId))) {
+      await completeClaimedVideoJob(processingPath);
+      console.log(`[worker] Cancelled job ${item.jobId}.`);
       return true;
     }
 

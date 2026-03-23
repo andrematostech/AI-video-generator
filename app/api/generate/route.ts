@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { buildProjectPaths } from "@/lib/server/filesystem";
+import path from "node:path";
+import { buildProjectPaths, ensureDirectories, writeBuffer } from "@/lib/server/filesystem";
 import { createVideoJob } from "@/lib/server/jobs";
 import { enqueueVideoJob } from "@/lib/server/queue";
+import { VideoGenerationControls, VideoResolution, VideoStyleMode } from "@/lib/types";
 import {
   consumeGenerateRateLimit,
   getRateLimitKeyFromRequestHeaders
@@ -10,8 +12,57 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { prompt?: string };
-    const prompt = body.prompt?.trim();
+    const contentType = request.headers.get("content-type") ?? "";
+    let prompt: string | undefined;
+    let videoResolution: VideoResolution = "720p";
+    let videoStyleMode: VideoStyleMode = "realistic";
+    let generationControls: VideoGenerationControls = {
+      cfgScale: 0.5
+    };
+    let uploadedStartImage: File | null = null;
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      prompt = String(formData.get("prompt") ?? "").trim();
+      videoResolution = formData.get("videoResolution") === "1080p" ? "1080p" : "720p";
+      videoStyleMode = formData.get("videoStyleMode") === "stylized" ? "stylized" : "realistic";
+      const negativePromptValue = String(formData.get("negativePrompt") ?? "").trim();
+      const cfgScaleValue = Number(formData.get("cfgScale") ?? 0.5);
+      const startImageValue = formData.get("startImage");
+
+      generationControls = {
+        negativePrompt: negativePromptValue || undefined,
+        cfgScale:
+          Number.isFinite(cfgScaleValue) && cfgScaleValue >= 0 && cfgScaleValue <= 1
+            ? cfgScaleValue
+            : 0.5
+      };
+
+      uploadedStartImage = startImageValue instanceof File && startImageValue.size > 0
+        ? startImageValue
+        : null;
+    } else {
+      const body = (await request.json()) as {
+        prompt?: string;
+        videoResolution?: VideoResolution;
+        videoStyleMode?: VideoStyleMode;
+        negativePrompt?: string;
+        cfgScale?: number;
+      };
+      prompt = body.prompt?.trim();
+      videoResolution = body.videoResolution === "1080p" ? "1080p" : "720p";
+      videoStyleMode = body.videoStyleMode === "stylized" ? "stylized" : "realistic";
+      generationControls = {
+        negativePrompt: body.negativePrompt?.trim() || undefined,
+        cfgScale:
+          typeof body.cfgScale === "number" &&
+          Number.isFinite(body.cfgScale) &&
+          body.cfgScale >= 0 &&
+          body.cfgScale <= 1
+            ? body.cfgScale
+            : 0.5
+      };
+    }
 
     if (!prompt) {
       return NextResponse.json(
@@ -47,10 +98,22 @@ export async function POST(request: NextRequest) {
     const directories = buildProjectPaths(jobId);
     const maxAttempts = 3;
 
+    if (uploadedStartImage) {
+      const extension = path.extname(uploadedStartImage.name || "").toLowerCase() || ".png";
+      const safeExtension = /^[.][a-z0-9]+$/.test(extension) ? extension : ".png";
+      const startImagePath = path.join(directories.inputsDirectory, `start-image${safeExtension}`);
+      await ensureDirectories([directories.rootDirectory, directories.inputsDirectory]);
+      await writeBuffer(startImagePath, await uploadedStartImage.arrayBuffer());
+      generationControls.startImagePath = startImagePath;
+    }
+
     const job = await createVideoJob({
       id: jobId,
       prompt,
       assetsDirectory: directories.rootDirectory,
+      videoResolution,
+      videoStyleMode,
+      generationControls,
       maxAttempts
     });
 

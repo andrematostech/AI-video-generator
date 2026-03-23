@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readdir, rm, stat } from "node:fs/promises";
 import { getServerEnv } from "@/lib/config/env.server";
+import { pruneDatabaseJobs } from "@/lib/server/database";
 import { buildProjectPaths } from "@/lib/server/filesystem";
 import {
   clearJobTemporaryArtifactReferences,
@@ -15,6 +16,7 @@ type CleanupConfig = {
   intervalMs: number;
   tempFileTtlMs: number;
   keepFinalVideos: boolean;
+  keepLatestJobs: number;
 };
 
 const TEMP_ASSET_TYPES = [
@@ -31,7 +33,8 @@ export function getCleanupConfig(): CleanupConfig {
     enabled: env.CLEANUP_ENABLED !== "false",
     intervalMs: Math.max(1, Number(env.CLEANUP_INTERVAL_MINUTES || "30")) * 60 * 1000,
     tempFileTtlMs: Math.max(1, Number(env.CLEANUP_TEMP_FILE_TTL_HOURS || "24")) * 60 * 60 * 1000,
-    keepFinalVideos: env.CLEANUP_KEEP_FINAL_VIDEOS !== "false"
+    keepFinalVideos: env.CLEANUP_KEEP_FINAL_VIDEOS !== "false",
+    keepLatestJobs: Math.max(1, Number(env.CLEANUP_MAX_JOBS || "3"))
   };
 }
 
@@ -132,6 +135,9 @@ export async function runCleanupNow() {
   }
 
   await cleanupOrphanedQueueDirectories();
+  await pruneDatabaseJobs({
+    keepLatestJobs: config.keepLatestJobs
+  });
 
   return {
     cleanedJobCount: jobs.length

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getServerEnv } from "@/lib/config/env.server";
 
@@ -9,18 +9,29 @@ export function buildProjectPaths(projectId: string) {
   const audioDirectory = path.join(rootDirectory, "audio");
   const subtitlesDirectory = path.join(rootDirectory, "subtitles");
   const renderDirectory = path.join(rootDirectory, "render");
+  const inputsDirectory = path.join(rootDirectory, "inputs");
 
   return {
     rootDirectory,
     clipsDirectory,
     audioDirectory,
     subtitlesDirectory,
-    renderDirectory
+    renderDirectory,
+    inputsDirectory
   };
 }
 
 export async function ensureDirectories(paths: string[]) {
   await Promise.all(paths.map((directoryPath) => mkdir(directoryPath, { recursive: true })));
+}
+
+export async function pathExists(targetPath: string) {
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function downloadFile(fileUrl: string, targetPath: string) {

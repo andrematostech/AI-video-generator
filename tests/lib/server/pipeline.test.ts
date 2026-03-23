@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createVideoJob, readVideoJob, updateVideoJob } from "@/lib/server/jobs";
 import { processVideoJob } from "@/lib/server/pipeline";
+import * as providers from "@/lib/providers";
 import { setProviderModeForTests } from "@/lib/providers";
 import { setupTestEnvironment } from "@/tests/helpers/test-env";
 
@@ -108,6 +109,51 @@ describe("processVideoJob with mock providers", () => {
       ]);
       expect(job.stepLogs.every((log) => log.status === "completed")).toBe(true);
     } finally {
+      setProviderModeForTests(null);
+      await testEnv.cleanup();
+    }
+  });
+
+  it("reuses existing clip files on retry instead of regenerating them", async () => {
+    const testEnv = await setupTestEnvironment();
+
+    try {
+      const jobId = "mock-pipeline-reuse-job";
+      const assetsDirectory = path.join(testEnv.assetsDir, jobId);
+
+      await createVideoJob({
+        id: jobId,
+        prompt: "Create a reusable clip test video",
+        assetsDirectory
+      });
+
+      await processVideoJob(jobId, "Create a reusable clip test video");
+
+      const plannedJob = await readVideoJob(jobId);
+      const existingClipPath = path.join(assetsDirectory, "clips", "scene-1.mp4");
+      await writeFile(existingClipPath, "existing-clip", "utf8");
+
+      await updateVideoJob(jobId, {
+        status: "queued",
+        scenes: plannedJob.scenes.map((scene, index) => ({
+          ...scene,
+          clipPath: index === 0 ? existingClipPath : undefined
+        })),
+        progress: {
+          completedScenes: 0,
+          totalScenes: plannedJob.scenes.length,
+          currentStep: "Queued after retry"
+        }
+      });
+
+      const clipSpy = vi.spyOn(providers, "generateSceneClip");
+
+      await processVideoJob(jobId, "Create a reusable clip test video");
+
+      expect(clipSpy).toHaveBeenCalledTimes(3);
+      expect((await readFile(existingClipPath, "utf8"))).toBe("existing-clip");
+    } finally {
+      vi.restoreAllMocks();
       setProviderModeForTests(null);
       await testEnv.cleanup();
     }

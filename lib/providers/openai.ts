@@ -5,7 +5,8 @@ import {
   GeneratedScript,
   GeneratedVideoMetadata,
   VideoPlan,
-  VideoScene
+  VideoScene,
+  VideoStyleMode
 } from "@/lib/types";
 
 type ScenePlanResponse = {
@@ -18,7 +19,38 @@ type VideoMetadataResponse = {
   tags: unknown;
 };
 
+type SceneCountPlan = {
+  target: number;
+  min: number;
+  max: number;
+};
+
+type SceneQualityProfile = {
+  requestedStylizedLook: boolean;
+  styleMode: VideoStyleMode;
+  continuityBrief: string;
+  styleDirective: string;
+  consistencyAnchors: string[];
+  cinematicDirectives: string[];
+};
+
 const OPENAI_RESPONSE_TIMEOUT_MS = 60_000;
+const STYLIZED_KEYWORDS = [
+  "anime",
+  "animated",
+  "animation",
+  "cartoon",
+  "illustration",
+  "illustrated",
+  "comic",
+  "manga",
+  "pixar",
+  "stylized",
+  "stylised",
+  "3d render",
+  "cgi",
+  "game art"
+] as const;
 
 function getOpenAiClient() {
   const env = getServerEnv();
@@ -44,6 +76,177 @@ function extractTextFromResponse(response: OpenAI.Responses.Response) {
   }
 
   return chunks.join("\n").trim();
+}
+
+function normalizeWhitespace(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function extractConsistencyAnchors(prompt: string) {
+  const normalizedPrompt = normalizeWhitespace(prompt);
+  const anchorPatterns = [
+    /\b(?:real human actor|male actor|female actor|young woman|young man|lone figure|lone hacker|traveler|traveller|scientist|founder|designer|dog|golden retriever|woman|man)\b/gi,
+    /\b(?:trench coat|hoodie|suit|jacket|armor|armour|implants|augmented implants|backpack)\b/gi,
+    /\b(?:cyberpunk city|neon-lit city|rain-soaked city street|mountain lake|forest at sunrise|wet reflective streets|holographic ads|flying vehicles)\b/gi,
+    /\b(?:35mm|50mm|shallow depth of field|wide aerial shot|street-level shot|close-up|tracking shot|slow motion|slow cinematic movement)\b/gi,
+    /\b(?:neon blue|electric purple|hot pink|cyan glow|deep blacks|volumetric fog|wet reflective surfaces|film-grade color grading|photorealistic|live-action)\b/gi
+  ];
+
+  const anchors = new Set<string>();
+
+  for (const pattern of anchorPatterns) {
+    const matches = normalizedPrompt.match(pattern) ?? [];
+
+    for (const match of matches) {
+      const anchor = normalizeWhitespace(match.toLowerCase());
+
+      if (anchor.length >= 3) {
+        anchors.add(anchor);
+      }
+    }
+  }
+
+  return [...anchors].slice(0, 8);
+}
+
+function buildCinematicDirectives(styleMode: VideoStyleMode) {
+  if (styleMode === "stylized") {
+    return [
+      "frame each shot like a premium concept trailer image",
+      "clear focal subject and readable silhouette",
+      "deliberate environmental storytelling",
+      "cohesive color contrast and controlled motion",
+      "avoid flat generic stock-video composition"
+    ];
+  }
+
+  return [
+    "frame each shot like a high-budget feature film",
+    "strong subject separation and readable composition",
+    "practical motivated lighting with cinematic contrast",
+    "premium lens language with stable perspective",
+    "performance-driven subject focus instead of generic montage",
+    "avoid cheap stock-video framing and toy-like CGI aesthetics"
+  ];
+}
+
+function getSceneCountPlan(targetDurationSeconds: number): SceneCountPlan {
+  if (targetDurationSeconds <= 12) {
+    return { target: 2, min: 2, max: 3 };
+  }
+
+  if (targetDurationSeconds <= 18) {
+    return { target: 3, min: 3, max: 4 };
+  }
+
+  if (targetDurationSeconds <= 24) {
+    return { target: 4, min: 4, max: 5 };
+  }
+
+  return { target: 5, min: 5, max: 6 };
+}
+
+function promptRequestsStylizedLook(prompt: string) {
+  const normalizedPrompt = prompt.toLowerCase();
+  return STYLIZED_KEYWORDS.some((keyword) => {
+    if (!normalizedPrompt.includes(keyword)) {
+      return false;
+    }
+
+    const negativePattern = new RegExp(
+      `(avoid|no|not|without)\\s+[^.\\n]{0,24}${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+      "i"
+    );
+
+    return !negativePattern.test(normalizedPrompt);
+  });
+}
+
+function buildSceneQualityProfile(
+  prompt: string,
+  styleMode: VideoStyleMode = "realistic"
+): SceneQualityProfile {
+  const requestedStylizedLook = promptRequestsStylizedLook(prompt);
+  const shouldUseStylizedLook = styleMode === "stylized";
+
+  return {
+    requestedStylizedLook,
+    styleMode,
+    continuityBrief:
+      "Maintain the same hero subject identity, wardrobe silhouette, age range, environment design language, lens feel, lighting direction, color grade, and atmospheric density across all scenes unless the prompt explicitly calls for a change.",
+    styleDirective: shouldUseStylizedLook
+      ? "Preserve a highly designed stylized cinematic look with deliberate shape language, consistent character design, premium atmospheric detail, and stable color treatment across every scene."
+      : "Default to a live-action photorealistic cinematic look with realistic human anatomy, natural skin texture, film-like lighting, stable lens language, and avoid anime, cartoon, illustration, glossy game-art, or synthetic CGI character aesthetics.",
+    consistencyAnchors: extractConsistencyAnchors(prompt),
+    cinematicDirectives: buildCinematicDirectives(styleMode)
+  };
+}
+
+function buildScenePlanningGuidance(
+  prompt: string,
+  targetDurationSeconds: number,
+  styleMode: VideoStyleMode = "realistic"
+) {
+  const sceneCountPlan = getSceneCountPlan(targetDurationSeconds);
+  const qualityProfile = buildSceneQualityProfile(prompt, styleMode);
+
+  return [
+    `Target scene count: ${sceneCountPlan.target}.`,
+    `Allowed scene count range: ${sceneCountPlan.min} to ${sceneCountPlan.max}.`,
+    "Preserve the user's important visual constraints instead of simplifying them away.",
+    "Each videoPrompt must be rich and production-ready, with concrete subject detail, environment, camera framing, lens feel, lighting, mood, color palette, and motion.",
+    qualityProfile.continuityBrief,
+    qualityProfile.styleDirective,
+    qualityProfile.consistencyAnchors.length > 0
+      ? `Keep these continuity anchors visible across scenes: ${qualityProfile.consistencyAnchors.join(", ")}.`
+      : "If the user describes a hero subject, wardrobe, environment, lens, or color palette, keep those details visibly consistent across scenes.",
+    `Use this cinematic brief: ${qualityProfile.cinematicDirectives.join(", ")}.`,
+    "Prefer iconic shots with clear cinematic intent over vague filler coverage.",
+    "Make each scene prompt strong enough to send directly to a video generation model without needing extra style explanation."
+  ].join(" ");
+}
+
+export function enhanceScenePrompt(
+  videoPrompt: string,
+  originalPrompt: string,
+  styleMode: VideoStyleMode = "realistic"
+) {
+  const normalizedVideoPrompt = normalizeWhitespace(videoPrompt);
+  const normalizedPrompt = normalizeWhitespace(originalPrompt);
+  const qualityProfile = buildSceneQualityProfile(normalizedPrompt, styleMode);
+  const sharedQualityDirectives =
+    qualityProfile.styleMode === "stylized" || qualityProfile.requestedStylizedLook
+      ? "high-end cinematic composition, consistent character design, stable wardrobe and silhouette continuity, consistent lighting direction, consistent color grade, smooth natural motion, premium atmospheric detail, cohesive stylized worldbuilding"
+      : "live-action photorealistic, cinematic film look, realistic human anatomy and skin texture when people appear, natural motion, high-end production value, consistent character design, stable wardrobe and facial continuity, consistent lighting direction, consistent lens language, consistent film-grade color grading, avoid anime, cartoon, illustration, glossy game-art, and synthetic CGI character look";
+
+  const originalPromptSnippet =
+    normalizedPrompt.length > 260
+      ? `${normalizedPrompt.slice(0, 257)}...`
+      : normalizedPrompt;
+  const continuityAnchorsSnippet =
+    qualityProfile.consistencyAnchors.length > 0
+      ? ` Keep these continuity anchors stable across scenes: ${qualityProfile.consistencyAnchors.join(", ")}.`
+      : "";
+  const cinematicBriefSnippet = ` Use this cinematic brief: ${qualityProfile.cinematicDirectives.join(", ")}.`;
+
+  return normalizeWhitespace(
+    `${normalizedVideoPrompt}. Preserve these core user directions: ${originalPromptSnippet}.${continuityAnchorsSnippet}${cinematicBriefSnippet} ${sharedQualityDirectives}.`
+  );
+}
+
+export function enhanceScenePlan(scenes: VideoScene[], originalPrompt: string) {
+  return enhanceScenePlanWithStyle(scenes, originalPrompt, "realistic");
+}
+
+export function enhanceScenePlanWithStyle(
+  scenes: VideoScene[],
+  originalPrompt: string,
+  styleMode: VideoStyleMode = "realistic"
+) {
+  return scenes.map((scene) => ({
+    ...scene,
+    videoPrompt: enhanceScenePrompt(scene.videoPrompt, originalPrompt, styleMode)
+  }));
 }
 
 export function parseGeneratedScript(input: unknown): GeneratedScript {
@@ -89,8 +292,12 @@ export function parseGeneratedVideoMetadata(input: unknown): GeneratedVideoMetad
   };
 }
 
-export async function generateScript(prompt: string): Promise<GeneratedScript> {
+export async function generateScript(
+  prompt: string,
+  styleMode: VideoStyleMode = "realistic"
+): Promise<GeneratedScript> {
   const env = getServerEnv();
+  const qualityProfile = buildSceneQualityProfile(prompt, styleMode);
   const response = await runWithAbortTimeout(
     "OpenAI script generation",
     OPENAI_RESPONSE_TIMEOUT_MS,
@@ -105,7 +312,7 @@ export async function generateScript(prompt: string): Promise<GeneratedScript> {
                 {
                   type: "input_text",
                   text:
-                    "You create short AI video scripts. Return strict JSON with keys title, narrationScript, targetDurationSeconds. Keep it concise, cinematic, and suitable for a 15 to 30 second video."
+                    `You create short AI video scripts. Return strict JSON with keys title, narrationScript, targetDurationSeconds. Keep it concise, cinematic, and suitable for a 15 to 30 second video. Preserve the user's intended realism, camera language, mood, and visual style instead of flattening them into generic marketing copy. ${qualityProfile.continuityBrief} ${qualityProfile.styleDirective} Use this cinematic brief: ${qualityProfile.cinematicDirectives.join(", ")}.`
                 }
               ]
             },
@@ -135,9 +342,16 @@ export async function generateScript(prompt: string): Promise<GeneratedScript> {
 
 export async function generateVideoPlan(
   prompt: string,
-  script: GeneratedScript
+  script: GeneratedScript,
+  styleMode: VideoStyleMode = "realistic"
 ): Promise<VideoPlan> {
   const env = getServerEnv();
+  const sceneCountPlan = getSceneCountPlan(script.targetDurationSeconds);
+  const planningGuidance = buildScenePlanningGuidance(
+    prompt,
+    script.targetDurationSeconds,
+    styleMode
+  );
   const response = await runWithAbortTimeout(
     "OpenAI scene planning",
     OPENAI_RESPONSE_TIMEOUT_MS,
@@ -152,7 +366,7 @@ export async function generateVideoPlan(
                 {
                   type: "input_text",
                   text:
-                    "You are planning scenes for a short AI-generated video. Return strict JSON with one key: scenes. scenes must contain between 4 and 6 items. Each scene must contain exactly sceneIndex, narration, videoPrompt, durationSeconds. Match the provided script and keep the total duration close to the provided target duration."
+                    `You are planning scenes for a short AI-generated video. Return strict JSON with one key: scenes. Each scene must contain exactly sceneIndex, narration, videoPrompt, durationSeconds. Match the provided script and keep the total duration close to the provided target duration. ${planningGuidance}`
                 }
               ]
             },
@@ -182,8 +396,8 @@ export async function generateVideoPlan(
                 properties: {
                   scenes: {
                     type: "array",
-                    minItems: 4,
-                    maxItems: 6,
+                    minItems: sceneCountPlan.min,
+                    maxItems: sceneCountPlan.max,
                     items: {
                       type: "object",
                       additionalProperties: false,
@@ -223,7 +437,11 @@ export async function generateVideoPlan(
 
   const rawJson = extractTextFromResponse(response);
   const parsed = JSON.parse(rawJson) as ScenePlanResponse;
-  const scenes = parseScenePlan(parsed.scenes);
+  const scenes = enhanceScenePlanWithStyle(
+    parseScenePlan(parsed.scenes, sceneCountPlan),
+    prompt,
+    styleMode
+  );
 
   return {
     title: script.title,
@@ -315,8 +533,15 @@ export async function generateVideoMetadata(params: {
   return parseGeneratedVideoMetadata(JSON.parse(rawJson));
 }
 
-export function parseScenePlan(input: unknown): VideoScene[] {
-  if (!Array.isArray(input) || input.length < 4 || input.length > 6) {
+export function parseScenePlan(
+  input: unknown,
+  sceneCountPlan: Pick<SceneCountPlan, "min" | "max"> = { min: 2, max: 6 }
+): VideoScene[] {
+  if (
+    !Array.isArray(input) ||
+    input.length < sceneCountPlan.min ||
+    input.length > sceneCountPlan.max
+  ) {
     throw new Error("OpenAI returned an invalid scene list.");
   }
 

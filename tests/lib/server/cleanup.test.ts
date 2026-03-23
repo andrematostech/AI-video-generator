@@ -1,7 +1,7 @@
 import path from "node:path";
 import { mkdir, rm, utimes, writeFile } from "node:fs/promises";
 import { resetServerEnvForTests } from "@/lib/config/env.server";
-import { runDatabaseWrite } from "@/lib/server/database";
+import { runDatabaseRead, runDatabaseWrite } from "@/lib/server/database";
 import { createVideoJob, readVideoJob, recordGeneratedAsset, updateVideoJob } from "@/lib/server/jobs";
 import { runCleanupNow } from "@/lib/server/cleanup";
 import { setupTestEnvironment } from "@/tests/helpers/test-env";
@@ -116,6 +116,56 @@ describe("runCleanupNow", () => {
       expect(job.generatedAssets.some((asset) => asset.assetType === "scene_clip")).toBe(false);
     } finally {
       await rm(path.join(testEnv.assetsDir, "cleanup-job"), { recursive: true, force: true });
+      await testEnv.cleanup();
+    }
+  });
+
+  it("keeps only the latest configured jobs in the store", async () => {
+    const testEnv = await setupTestEnvironment();
+
+    try {
+      Object.assign(process.env, {
+        CLEANUP_ENABLED: "true",
+        CLEANUP_MAX_JOBS: "3"
+      });
+      resetServerEnvForTests();
+
+      for (const [index, jobId] of ["job-1", "job-2", "job-3", "job-4"].entries()) {
+        await createVideoJob({
+          id: jobId,
+          prompt: `Prompt ${index + 1}`,
+          assetsDirectory: path.join(testEnv.assetsDir, jobId)
+        });
+
+        await updateVideoJob(jobId, {
+          status: "completed",
+          progress: {
+            completedScenes: 1,
+            totalScenes: 1,
+            currentStep: "Completed"
+          }
+        });
+
+        await runDatabaseWrite((store) => {
+          const job = store.jobs.find((entry) => entry.id === jobId);
+
+          if (!job) {
+            throw new Error(`Expected job to exist: ${jobId}`);
+          }
+
+          const updatedAt = new Date(Date.now() - (4 - index) * 1000).toISOString();
+          job.updatedAt = updatedAt;
+        });
+      }
+
+      await runCleanupNow();
+
+      const retainedJobIds = await runDatabaseRead((store) =>
+        store.jobs.map((job) => job.id).sort()
+      );
+
+      expect(retainedJobIds).toEqual(["job-2", "job-3", "job-4"]);
+    } finally {
       await testEnv.cleanup();
     }
   });

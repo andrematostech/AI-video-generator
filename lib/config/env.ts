@@ -13,6 +13,7 @@ export type ServerEnv = {
   CLEANUP_INTERVAL_MINUTES: string;
   CLEANUP_TEMP_FILE_TTL_HOURS: string;
   CLEANUP_KEEP_FINAL_VIDEOS: string;
+  CLEANUP_MAX_JOBS: string;
 };
 
 function readRequiredString(env: RawEnv, key: keyof ServerEnv) {
@@ -77,6 +78,11 @@ export function loadServerEnv(rawEnv: RawEnv = process.env): ServerEnv {
       rawEnv,
       "CLEANUP_KEEP_FINAL_VIDEOS",
       "true"
+    ),
+    CLEANUP_MAX_JOBS: readOptionalString(
+      rawEnv,
+      "CLEANUP_MAX_JOBS",
+      "3"
     )
   };
 }

@@ -1,5 +1,4 @@
-import { readVideoJob } from "@/lib/server/jobs";
-import { JobStatusPanel } from "@/components/job-status-panel";
+import { redirect } from "next/navigation";
 
 type JobStatusPageProps = {
   params: {
@@ -8,6 +7,5 @@ type JobStatusPageProps = {
 };
 
 export default async function JobStatusPage({ params }: JobStatusPageProps) {
-  const result = await readVideoJob(params.jobId);
-  return <JobStatusPanel initialJob={result} />;
+  redirect(`/?job=${params.jobId}`);
 }

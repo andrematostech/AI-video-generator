@@ -14,7 +14,7 @@ type VerboseTranscription = {
   segments?: TranscriptionSegment[];
 };
 
-const TRANSCRIPTION_MODEL = "gpt-4o-transcribe";
+const TRANSCRIPTION_MODEL = "whisper-1";
 const OPENAI_TRANSCRIPTION_TIMEOUT_MS = 60_000;
 
 function getOpenAiClient() {

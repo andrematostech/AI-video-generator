@@ -7,7 +7,10 @@ import { VideoJobResult, VideoScene } from "@/lib/types";
 
 type JobStatusPanelProps = {
   initialJob: VideoJobResult;
+  embedded?: boolean;
 };
+
+const LATEST_JOB_STORAGE_KEY = "lumo-latest-job-id";
 
 function getProgressPercent(job: VideoJobResult) {
   const total = job.progress.totalScenes;
@@ -15,6 +18,12 @@ function getProgressPercent(job: VideoJobResult) {
 
   if (job.status === "completed") {
     return 100;
+  }
+
+  if (job.status === "cancelled") {
+    return job.progress.totalScenes > 0
+      ? Math.round((job.progress.completedScenes / job.progress.totalScenes) * 100)
+      : 0;
   }
 
   if (job.status === "awaiting_scene_approval") {
@@ -48,12 +57,27 @@ function formatTimestamp(timestamp?: string) {
   return new Date(timestamp).toLocaleString();
 }
 
+function getActiveClipLabel(job: VideoJobResult) {
+  if (job.status !== "generating_video_clips") {
+    return null;
+  }
+
+  const nextClipNumber = Math.min(
+    job.progress.completedScenes + 1,
+    Math.max(job.progress.totalScenes, 1)
+  );
+
+  return `Scene ${nextClipNumber} of ${job.progress.totalScenes || "?"}`;
+}
+
 function getStatusTone(status: VideoJobResult["status"]) {
   switch (status) {
     case "completed":
       return "border-emerald-400/20 bg-emerald-500/10 text-emerald-100";
     case "failed":
       return "border-red-400/20 bg-red-500/10 text-red-100";
+    case "cancelled":
+      return "border-stone-400/20 bg-stone-500/10 text-stone-100";
     case "awaiting_scene_approval":
       return "border-amber-400/20 bg-amber-500/10 text-amber-100";
     case "queued":
@@ -83,6 +107,8 @@ function getStatusLabel(status: VideoJobResult["status"]) {
       return "Rendering video";
     case "completed":
       return "Completed";
+    case "cancelled":
+      return "Cancelled";
     case "failed":
       return "Failed";
   }
@@ -100,7 +126,15 @@ function getStepState(job: VideoJobResult, stepStatuses: VideoJobResult["status"
   return "idle";
 }
 
-export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
+function isSceneActivelyProcessing(job: VideoJobResult, sceneIndex: number) {
+  if (job.status !== "generating_video_clips") {
+    return false;
+  }
+
+  return sceneIndex === job.progress.completedScenes + 1;
+}
+
+export function JobStatusPanel({ initialJob, embedded = false }: JobStatusPanelProps) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
   const [pollError, setPollError] = useState<string | null>(null);
@@ -110,10 +144,11 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
   const [isSceneDirty, setIsSceneDirty] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  const isTerminal = job.status === "completed" || job.status === "failed";
-  const canCancel = job.status === "queued" || job.status === "awaiting_scene_approval";
+  const isTerminal = job.status === "completed" || job.status === "failed" || job.status === "cancelled";
+  const canCancel = !isTerminal;
   const activeStepLog = [...job.stepLogs].reverse().find((log) => log.status === "running");
   const progressPercent = useMemo(() => getProgressPercent(job), [job]);
+  const activeClipLabel = getActiveClipLabel(job);
   const pipelineSteps = [
     {
       label: "Script",
@@ -140,6 +175,14 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
       statuses: ["rendering_video"] as VideoJobResult["status"][]
     }
   ];
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(LATEST_JOB_STORAGE_KEY, job.id);
+  }, [job.id]);
 
   useEffect(() => {
     if (!isSceneDirty || job.status !== "awaiting_scene_approval") {
@@ -286,9 +329,8 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
     }
   }
 
-  return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 md:px-8 md:py-10">
-      <div className="space-y-6">
+  const content = (
+    <div className="space-y-6">
         <section className="premium-shell overflow-hidden p-6 md:p-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_28%)]" />
           <div className="relative">
@@ -319,6 +361,8 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
             <h1 className="mt-4 text-4xl leading-tight text-stone-50 md:text-5xl">
               {job.status === "completed"
                 ? "Video generation complete"
+                : job.status === "cancelled"
+                  ? "Video generation cancelled"
                 : job.status === "failed"
                   ? "Video generation failed"
                   : job.status === "awaiting_scene_approval"
@@ -330,7 +374,12 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
             </p>
             <p className="mt-2 text-sm leading-7 text-stone-300">
               Current step:{" "}
-              <span className="font-medium text-stone-100">{job.progress.currentStep}</span>
+              <span className="inline-flex items-center gap-2 font-medium text-stone-100">
+                {!isTerminal ? (
+                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#f4d9b6] shadow-[0_0_16px_rgba(244,217,182,0.6)] animate-pulse-soft" />
+                ) : null}
+                {job.progress.currentStep}
+              </span>
             </p>
 
             <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -356,7 +405,19 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
               </div>
             </div>
 
-            <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+            {activeClipLabel ? (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-2 rounded-[0.85rem] border border-[#f4d9b6]/20 bg-[#f4d9b6]/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#f6dfc1]">
+                  <span className="inline-flex h-2 w-2 rounded-full bg-[#f4d9b6] shadow-[0_0_14px_rgba(244,217,182,0.7)] animate-pulse-soft" />
+                  Currently generating
+                </span>
+                <span className="text-sm font-medium text-stone-200">
+                  {activeClipLabel}
+                </span>
+              </div>
+            ) : null}
+
+            <div className="mt-8 grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
               <div>
                 <div className="grid gap-3 md:grid-cols-6">
                   {pipelineSteps.map((step) => {
@@ -367,7 +428,7 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                         key={step.label}
                         className={`rounded-[0.85rem] border px-4 py-4 transition ${
                           state === "current"
-                            ? "border-[#f4d9b6]/40 bg-[#f4d9b6]/12 text-stone-50 shadow-glow"
+                            ? "border-[#f4d9b6]/40 bg-[#f4d9b6]/12 text-stone-50 shadow-glow animate-shimmer-border"
                             : state === "complete"
                               ? "border-white/10 bg-white/[0.08] text-stone-100"
                               : "border-white/10 bg-white/[0.04] text-stone-500"
@@ -381,11 +442,14 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
                 </div>
 
                 <div className="mt-6">
-                  <div className="h-2.5 overflow-hidden rounded-[0.7rem] bg-white/10">
+                  <div className="relative h-2.5 overflow-hidden rounded-[0.7rem] bg-white/10">
                     <div
                       className="h-full rounded-[0.7rem] bg-gradient-to-r from-[#f4d9b6] via-[#dfbf94] to-[#8ca3ff] transition-all duration-500"
                       style={{ width: `${progressPercent}%` }}
                     />
+                    {!isTerminal ? (
+                      <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.45),transparent)] mix-blend-screen animate-progress-scan" />
+                    ) : null}
                   </div>
                   <p className="mt-3 text-xs uppercase tracking-[0.16em] text-stone-500">
                     {job.progress.completedScenes}/{job.progress.totalScenes || 0} scenes processed
@@ -394,28 +458,80 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
               </div>
 
               <div className="premium-panel p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
-                  Pipeline summary
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-stone-500">
+                      Preview window
+                    </p>
+                <p className="mt-2 text-sm text-stone-400">
+                  Export {job.videoResolution} · {job.videoStyleMode}
                 </p>
-                <p className="mt-4 text-sm leading-7 text-stone-300">
+                <p className="mt-2 text-xs leading-6 text-stone-500">
+                  CFG {job.generationControls.cfgScale?.toFixed(1) ?? "0.5"}
+                  {job.generationControls.negativePrompt
+                    ? ` · Negative prompt enabled`
+                    : ""}
+                  {job.generationControls.startImagePath
+                    ? ` · Start image enabled`
+                    : ""}
+                </p>
+                  </div>
+                  {job.status === "completed" && job.outputVideoPath ? (
+                    <Link
+                      href={`/jobs/${job.id}/result`}
+                      className="inline-flex rounded-[0.9rem] border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-stone-100 transition hover:bg-white/[0.08]"
+                    >
+                      Open full result
+                    </Link>
+                  ) : null}
+                </div>
+
+                <div className="mt-4 overflow-hidden rounded-[0.95rem] border border-white/10 bg-black/40 shadow-soft">
+                  {job.status === "completed" && job.outputVideoPath ? (
+                    <video
+                      controls
+                      className="aspect-video w-full bg-black"
+                      src={`/api/jobs/${job.id}/video`}
+                    />
+                  ) : (
+                    <div className="relative aspect-video w-full overflow-hidden bg-[radial-gradient(circle_at_top,rgba(140,163,255,0.16),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]">
+                      <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.05),transparent)] animate-progress-scan" />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+                        <div className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.05]">
+                          <span className="inline-flex h-3 w-3 rounded-full bg-[#f4d9b6] shadow-[0_0_18px_rgba(244,217,182,0.7)] animate-pulse-soft" />
+                        </div>
+                        <p className="mt-4 text-base font-semibold text-stone-100">
+                          {job.status === "cancelled"
+                            ? "Generation was cancelled"
+                            : job.status === "failed"
+                              ? "Preview unavailable"
+                              : "Rendering preview..."}
+                        </p>
+                        <p className="mt-2 max-w-sm text-xs leading-6 text-stone-400">
+                          {job.status === "cancelled"
+                            ? "This job was cancelled before the final video was finished."
+                            : job.status === "failed"
+                              ? "This job did not complete successfully, so there is no final MP4 to preview."
+                              : "Lumo is still generating clips, narration, subtitles, or rendering the final video."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <p className="mt-4 text-xs leading-6 text-stone-400">
                   Final MP4 path:
-                  <span className="mt-2 block break-all text-stone-100">
+                  <span className="mt-1 block break-all text-stone-100">
                     {job.outputVideoPath || "Not available yet"}
                   </span>
                 </p>
 
                 {job.status === "completed" && job.outputVideoPath ? (
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <Link
-                      href={`/jobs/${job.id}/result`}
-                      className="inline-flex rounded-[0.9rem] bg-[#f4d9b6] px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-[#f8e4c9]"
-                    >
-                      View final video
-                    </Link>
+                  <div className="mt-4 flex flex-wrap gap-3">
                     <a
                       href={`/api/jobs/${job.id}/video`}
                       download
-                      className="inline-flex rounded-[0.9rem] border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.08]"
+                      className="inline-flex rounded-[0.9rem] bg-[#f4d9b6] px-4 py-2 text-sm font-semibold text-stone-950 transition hover:bg-[#f8e4c9]"
                     >
                       Download MP4
                     </a>
@@ -555,14 +671,31 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
             {job.scenes.map((scene) => (
               <article
                 key={scene.sceneIndex}
-                className="premium-panel p-5"
+                className={`premium-panel p-5 transition ${
+                  isSceneActivelyProcessing(job, scene.sceneIndex)
+                    ? "border-[#f4d9b6]/30 bg-[linear-gradient(180deg,rgba(244,217,182,0.08),rgba(255,255,255,0.035))] animate-shimmer-border"
+                    : ""
+                }`}
               >
                 <div className="flex items-center justify-between gap-4">
-                  <h2 className="text-2xl text-stone-50">Scene {scene.sceneIndex}</h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-2xl text-stone-50">Scene {scene.sceneIndex}</h2>
+                    {isSceneActivelyProcessing(job, scene.sceneIndex) ? (
+                      <span className="inline-flex items-center gap-2 rounded-[0.8rem] border border-[#f4d9b6]/20 bg-[#f4d9b6]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f6dfc1]">
+                        <span className="inline-flex h-2 w-2 rounded-full bg-[#f4d9b6] shadow-[0_0_12px_rgba(244,217,182,0.7)] animate-pulse-soft" />
+                        Processing
+                      </span>
+                    ) : null}
+                  </div>
                   <span className="rounded-[0.8rem] border border-white/10 bg-white/[0.05] px-3 py-1 text-xs font-medium text-stone-200">
                     {scene.durationSeconds}s
                   </span>
                 </div>
+                {isSceneActivelyProcessing(job, scene.sceneIndex) ? (
+                  <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-white/8">
+                    <div className="absolute inset-y-0 left-[-20%] w-24 rounded-full bg-gradient-to-r from-transparent via-[#f4d9b6] to-transparent animate-progress-scan" />
+                  </div>
+                ) : null}
                 <p className="mt-3 text-sm leading-7 text-stone-200">{scene.videoPrompt}</p>
                 <p className="mt-3 text-sm leading-7 text-stone-400">{scene.narration}</p>
                 {scene.clipPath ? (
@@ -669,6 +802,15 @@ export function JobStatusPanel({ initialJob }: JobStatusPanelProps) {
           </div>
         </section>
       </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 md:px-8 md:py-10">
+      {content}
     </main>
   );
 }

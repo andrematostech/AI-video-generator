@@ -1,3 +1,11 @@
+export type VideoResolution = "720p" | "1080p";
+export type VideoStyleMode = "realistic" | "stylized";
+export type VideoGenerationControls = {
+  negativePrompt?: string;
+  cfgScale?: number;
+  startImagePath?: string;
+};
+
 export type VideoScene = {
   sceneIndex: number;
   narration: string;
@@ -96,11 +104,15 @@ export type VideoJobStatus =
   | "generating_subtitles"
   | "rendering_video"
   | "completed"
+  | "cancelled"
   | "failed";
 
 export type VideoJobResult = {
   id: string;
   prompt: string;
+  videoResolution: VideoResolution;
+  videoStyleMode: VideoStyleMode;
+  generationControls: VideoGenerationControls;
   status: VideoJobStatus;
   attemptCount: number;
   maxAttempts: number;
